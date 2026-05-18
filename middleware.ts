@@ -22,11 +22,6 @@ function isPublic(pathname: string) {
   );
 }
 
-/**
- * Inlined here (not imported from src/) so the Node middleware runtime on
- * Vercel doesn't have to resolve TS path aliases or ESM extensions at runtime.
- * Logic mirrors src/lib/integrations/supabase/middleware.ts.
- */
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   let supabaseResponse = NextResponse.next({ request });
@@ -74,7 +69,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  runtime: "nodejs",
   matcher: [
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)).*)",
   ],

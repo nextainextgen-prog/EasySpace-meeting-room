@@ -7,9 +7,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const nextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: __dirname,
-  experimental: {
-    nodeMiddleware: true,
-  },
 };
 
 export default nextConfig;
