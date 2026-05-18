@@ -9,7 +9,7 @@ export interface KpiCardProps {
   value: React.ReactNode;
   delta?: { value: number; suffix?: string };
   icon: LucideIcon;
-  iconTone?: "primary" | "success" | "warning" | "danger";
+  iconTone?: "primary" | "success" | "warning" | "danger" | "muted";
   hint?: string;
   className?: string;
   onClick?: () => void;

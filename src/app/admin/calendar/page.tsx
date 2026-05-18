@@ -1,5 +1,4 @@
 import {
-  CalendarPlus,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -7,18 +6,25 @@ import {
   Plus,
   Search,
   Calendar as CalendarIcon,
+  CalendarOff,
 } from "lucide-react";
+import Link from "next/link";
 import { AdminTopbar } from "@/components/admin/topbar";
 import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { IconTile } from "@/components/ui/icon-tile";
-import { rooms, bookings } from "@/lib/mocks";
-import { formatTime, formatBaht } from "@/lib/format";
+import { EmptyState } from "@/components/ui/empty-state";
+import {
+  listRooms,
+  listBookingsForRange,
+  type BookingWithRelations,
+} from "@/lib/data";
+import { formatBaht, formatTime } from "@/lib/format";
 
-// Slots: 30-min intervals 08:30 – 16:30, plus evening 17:00–22:00
+export const dynamic = "force-dynamic";
+
 const slots: string[] = [];
 for (let m = 8 * 60 + 30; m <= 22 * 60; m += 30) {
   const h = Math.floor(m / 60);
@@ -41,26 +47,50 @@ function colorByStatus(status: string) {
   }
 }
 
-export default function CalendarPage() {
+export default async function CalendarPage() {
   const today = new Date();
-  const todayBookings = bookings.filter((b) => {
-    const d = new Date(b.startsAt);
-    return (
-      d.getDate() === today.getDate() &&
-      d.getMonth() === today.getMonth() &&
-      d.getFullYear() === today.getFullYear()
-    );
-  });
+  const dayStart = new Date(today);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(today);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  const [rooms, bookings] = await Promise.all([
+    listRooms(),
+    listBookingsForRange({
+      start: dayStart.toISOString(),
+      end: dayEnd.toISOString(),
+    }),
+  ]);
+
+  const revenueToday = bookings.reduce(
+    (sum, b) => sum + Number(b.paid_amount ?? 0),
+    0,
+  );
+  const outstandingCount = bookings.filter(
+    (b) => b.payment_status !== "paid" && b.payment_status !== "free",
+  ).length;
+  const usedSlots = bookings.reduce((sum, b) => {
+    const hours =
+      (new Date(b.ends_at).getTime() - new Date(b.starts_at).getTime()) /
+      3_600_000;
+    return sum + hours;
+  }, 0);
+  const utilisationPct =
+    rooms.length > 0
+      ? Math.min(100, Math.round((usedSlots / (rooms.length * 8)) * 100))
+      : 0;
 
   return (
     <>
       <AdminTopbar
         title="ปฏิทินการจอง"
-        subtitle="ภาพรวมการจองทั้งหมด · drag & drop · payment manager"
+        subtitle="ภาพรวมการจองทั้งหมด · ดึงจาก Supabase"
         actions={
-          <Button iconLeft={<Plus size={16} strokeWidth={2} />} size="sm">
-            จองใหม่
-          </Button>
+          <Link href="/admin/bookings">
+            <Button iconLeft={<Plus size={16} strokeWidth={2} />} size="sm">
+              จองใหม่
+            </Button>
+          </Link>
         }
       />
 
@@ -70,7 +100,6 @@ export default function CalendarPage() {
           description="ดู / แก้ไข / จัดการการจองทั้งหมดในวันเดียว"
         />
 
-        {/* Toolbar */}
         <Card className="!p-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
@@ -84,8 +113,16 @@ export default function CalendarPage() {
                 <ChevronRight size={16} strokeWidth={1.75} />
               </button>
               <div className="ml-2 inline-flex items-center gap-2 text-sm font-semibold tracking-tight">
-                <CalendarIcon size={16} className="text-primary-600" strokeWidth={1.75} />
-                18 พฤษภาคม 2026
+                <CalendarIcon
+                  size={16}
+                  className="text-primary-600"
+                  strokeWidth={1.75}
+                />
+                {today.toLocaleDateString("th-TH", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
               </div>
             </div>
 
@@ -110,7 +147,7 @@ export default function CalendarPage() {
 
             <div className="w-64">
               <Input
-                placeholder="ค้นหา booking, ลูกค้า..."
+                placeholder="ค้นหา..."
                 iconLeft={<Search size={14} strokeWidth={1.75} />}
                 className="h-9"
               />
@@ -121,7 +158,6 @@ export default function CalendarPage() {
               iconLeft={<Filter size={14} strokeWidth={1.75} />}
             >
               ตัวกรอง
-              <Badge tone="primary" className="ml-1.5 -mr-1">3</Badge>
             </Button>
             <Button
               variant="secondary"
@@ -134,7 +170,6 @@ export default function CalendarPage() {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
-          {/* Sidebar */}
           <aside className="space-y-5">
             <Card className="!p-4">
               <p className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-semibold mb-3">
@@ -143,31 +178,27 @@ export default function CalendarPage() {
               <ul className="space-y-2 text-sm">
                 <li className="flex justify-between">
                   <span className="text-ink-2">จอง</span>
-                  <span className="font-semibold tabular-nums">8 รายการ</span>
+                  <span className="font-semibold tabular-nums">
+                    {bookings.length} รายการ
+                  </span>
                 </li>
                 <li className="flex justify-between">
                   <span className="text-ink-2">รายได้</span>
                   <span className="font-semibold tabular-nums">
-                    {formatBaht(12400)}
+                    {formatBaht(revenueToday)}
                   </span>
                 </li>
                 <li className="flex justify-between">
                   <span className="text-ink-2">Utilization</span>
-                  <span className="font-semibold tabular-nums">67%</span>
-                </li>
-                <li className="flex justify-between">
-                  <span className="text-ink-2">ใช้งานตอนนี้</span>
-                  <span className="font-semibold tabular-nums">3 ห้อง</span>
+                  <span className="font-semibold tabular-nums">
+                    {utilisationPct}%
+                  </span>
                 </li>
                 <li className="flex justify-between">
                   <span className="text-ink-2">ค้างชำระ</span>
                   <span className="font-semibold tabular-nums text-red-600">
-                    2 รายการ
+                    {outstandingCount} รายการ
                   </span>
-                </li>
-                <li className="flex justify-between">
-                  <span className="text-ink-2">ลูกค้าใหม่</span>
-                  <span className="font-semibold tabular-nums">1 ราย</span>
                 </li>
               </ul>
             </Card>
@@ -211,7 +242,7 @@ export default function CalendarPage() {
                       {r.name}
                     </span>
                     <span className="text-xs text-ink-3 tabular-nums">
-                      {todayBookings.filter((b) => b.roomId === r.id).length}
+                      {bookings.filter((b) => b.room_id === r.id).length}
                     </span>
                   </li>
                 ))}
@@ -219,115 +250,107 @@ export default function CalendarPage() {
             </Card>
           </aside>
 
-          {/* Main Calendar */}
-          <Card className="!p-0 overflow-hidden">
-            <div className="grid border-b border-line bg-surface-subtle"
-                 style={{
-                   gridTemplateColumns: `80px repeat(${rooms.length}, minmax(0,1fr))`,
-                 }}>
-              <div className="px-3 py-3 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-semibold">
-                เวลา
-              </div>
-              {rooms.map((r) => (
-                <div
-                  key={r.id}
-                  className="px-4 py-3 border-l border-line"
-                >
-                  <p className="text-sm font-bold tracking-tight">{r.name}</p>
-                  <p className="text-[11px] text-ink-3">
-                    {r.capacityMin}–{r.capacityMax} ท่าน · {formatBaht(r.hourlyRate)}/ชม.
-                  </p>
+          {rooms.length === 0 ? (
+            <EmptyState
+              icon={CalendarOff}
+              title="ยังไม่มีห้องในระบบ"
+              description="กรุณาเพิ่มห้องที่ /admin/settings/rooms ก่อน"
+            />
+          ) : (
+            <Card className="!p-0 overflow-hidden">
+              <div
+                className="grid border-b border-line bg-surface-subtle"
+                style={{
+                  gridTemplateColumns: `80px repeat(${rooms.length}, minmax(0,1fr))`,
+                }}
+              >
+                <div className="px-3 py-3 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-semibold">
+                  เวลา
                 </div>
-              ))}
-            </div>
-
-            <div className="max-h-[640px] overflow-y-auto scrollbar-thin">
-              {slots.map((slot, idx) => {
-                const [h, m] = slot.split(":").map(Number);
-                const isLunch = h === 12;
-                const half = m === 30;
-                return (
-                  <div
-                    key={slot}
-                    className={`grid border-b border-line-soft ${
-                      isLunch ? "bg-surface-subtle/60" : ""
-                    }`}
-                    style={{
-                      gridTemplateColumns: `80px repeat(${rooms.length}, minmax(0,1fr))`,
-                    }}
-                  >
-                    <div className="px-3 py-2 text-[11px] tabular-nums text-ink-3 font-medium">
-                      {!half && slot}
-                    </div>
-                    {rooms.map((room) => {
-                      const slotDateStr = `${slot}`;
-                      const event = todayBookings.find((b) => {
-                        if (b.roomId !== room.id) return false;
-                        const start = new Date(b.startsAt);
-                        return (
-                          start.getHours() === h && start.getMinutes() === m
-                        );
-                      });
-                      return (
-                        <div
-                          key={`${slot}-${room.id}`}
-                          className="border-l border-line-soft min-h-[36px] relative hover:bg-primary-50/30 cursor-pointer transition"
-                        >
-                          {event && (
-                            <EventCard
-                              event={event}
-                              slotHeight={36}
-                            />
-                          )}
-                          {isLunch && !event && (
-                            <div className="absolute inset-1 rounded-input border border-dashed border-line text-[10px] text-ink-3 grid place-items-center">
-                              พัก
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                {rooms.map((r) => (
+                  <div key={r.id} className="px-4 py-3 border-l border-line">
+                    <p className="text-sm font-bold tracking-tight">{r.name}</p>
+                    <p className="text-[11px] text-ink-3">
+                      {r.capacity_min}–{r.capacity_max} ท่าน ·{" "}
+                      {formatBaht(r.hourly_rate)}/ชม.
+                    </p>
                   </div>
-                );
-              })}
-            </div>
-          </Card>
+                ))}
+              </div>
+
+              <div className="max-h-[640px] overflow-y-auto scrollbar-thin">
+                {slots.map((slot) => {
+                  const [h, m] = slot.split(":").map(Number);
+                  const isLunch = h === 12;
+                  const half = m === 30;
+                  return (
+                    <div
+                      key={slot}
+                      className={`grid border-b border-line-soft ${
+                        isLunch ? "bg-surface-subtle/60" : ""
+                      }`}
+                      style={{
+                        gridTemplateColumns: `80px repeat(${rooms.length}, minmax(0,1fr))`,
+                      }}
+                    >
+                      <div className="px-3 py-2 text-[11px] tabular-nums text-ink-3 font-medium">
+                        {!half && slot}
+                      </div>
+                      {rooms.map((room) => {
+                        const event = bookings.find((b) => {
+                          if (b.room_id !== room.id) return false;
+                          const start = new Date(b.starts_at);
+                          return (
+                            start.getHours() === h &&
+                            start.getMinutes() === m
+                          );
+                        });
+                        return (
+                          <div
+                            key={`${slot}-${room.id}`}
+                            className="border-l border-line-soft min-h-[36px] relative hover:bg-primary-50/30 cursor-pointer transition"
+                          >
+                            {event && <EventCard event={event} />}
+                            {isLunch && !event && (
+                              <div className="absolute inset-1 rounded-input border border-dashed border-line text-[10px] text-ink-3 grid place-items-center">
+                                พัก
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
         </div>
       </div>
     </>
   );
 }
 
-function EventCard({
-  event,
-  slotHeight,
-}: {
-  event: (typeof bookings)[number];
-  slotHeight: number;
-}) {
-  const start = new Date(event.startsAt);
-  const end = new Date(event.endsAt);
-  const slots =
-    (end.getTime() - start.getTime()) / (30 * 60 * 1000);
-  const height = slots * slotHeight - 4;
+function EventCard({ event }: { event: BookingWithRelations }) {
+  const start = new Date(event.starts_at);
+  const end = new Date(event.ends_at);
+  const slotCount = (end.getTime() - start.getTime()) / (30 * 60 * 1000);
+  const height = slotCount * 36 - 4;
 
   return (
     <div
       className={`absolute inset-x-1 top-1 rounded-card-sm border-l-2 px-2.5 py-1.5 shadow-card hover:shadow-card-hover transition cursor-pointer ${colorByStatus(
-        event.paymentStatus,
+        event.payment_status,
       )}`}
       style={{ height }}
     >
       <p className="text-[11px] font-bold text-ink-1 tracking-tight truncate">
-        {event.customerName}
+        {event.customer?.display_name ?? event.internal_title ?? "—"}
       </p>
       <p className="text-[10px] text-ink-3 tabular-nums">
-        {formatTime(event.startsAt)} – {formatTime(event.endsAt)}
+        {formatTime(event.starts_at)} – {formatTime(event.ends_at)}
       </p>
-      {event.flags?.includes("overdue") && (
-        <span className="absolute top-1.5 right-1.5 dot dot-danger" />
-      )}
-      {event.flags?.includes("vip") && (
+      {event.customer?.tags?.includes("VIP") && (
         <Badge tone="primary" className="!text-[9px] !px-1.5 mt-1">
           VIP
         </Badge>
