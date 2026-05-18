@@ -1,0 +1,13 @@
+import { updateSupabaseSession } from "@/lib/integrations/supabase/middleware";
+import type { NextRequest } from "next/server";
+
+export async function middleware(request: NextRequest) {
+  return updateSupabaseSession(request);
+}
+
+export const config = {
+  matcher: [
+    // Refresh session on everything except static assets and Next internals.
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)).*)",
+  ],
+};
