@@ -6,10 +6,6 @@
       "schedule": "0 12 * * *"
     },
     {
-      "path": "/api/cron/time-alerts",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/cron/outstanding-alerts",
       "schedule": "0 2 * * *"
     }
