@@ -74,10 +74,21 @@ const sections: NavSection[] = [
         minRole: "admin",
       },
       {
+        href: "/admin/audit-log",
+        label: "บันทึกการใช้งาน",
+        icon: "audit",
+        minRole: "admin",
+      },
+      {
         href: "/admin/settings",
         label: "ตั้งค่าระบบ",
         icon: "settings",
         minRole: "admin",
+      },
+      {
+        href: "/admin/account",
+        label: "บัญชีของฉัน",
+        icon: "account",
       },
     ],
   },
@@ -90,6 +101,7 @@ const ROLE_RANK: Record<Role, number> = {
   staff: 3,
   admin: 4,
   super_admin: 5,
+  owner: 6,
 };
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -99,6 +111,7 @@ const ROLE_LABEL: Record<Role, string> = {
   staff: "พนักงาน",
   admin: "แอดมิน",
   super_admin: "Super Admin",
+  owner: "เจ้าของระบบ",
 };
 
 interface SidebarProfile {

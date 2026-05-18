@@ -61,7 +61,9 @@ export async function updateSupabaseSession(request: NextRequest) {
   }
 
   const needsAuth =
-    pathname.startsWith("/admin") || pathname.startsWith("/app");
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/app") ||
+    pathname.startsWith("/org-admin");
 
   if (needsAuth && !user) {
     const url = request.nextUrl.clone();

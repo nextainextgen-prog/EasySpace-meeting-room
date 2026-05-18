@@ -80,6 +80,7 @@ const ROLE_RANK: Record<Role, number> = {
   staff: 3,
   admin: 4,
   super_admin: 5,
+  owner: 6,
 };
 
 export function hasRole(profile: AuthProfile, minRole: Role) {
@@ -111,6 +112,8 @@ export async function recordLogin(userId: string, ip?: string) {
  * least "staff" (set in middleware).
  */
 export const ROUTE_ROLE_REQUIREMENTS: Array<{ prefix: string; role: Role }> = [
+  { prefix: "/admin/audit-log", role: "admin" },
+  { prefix: "/admin/account", role: "staff" },
   { prefix: "/admin/settings", role: "admin" },
   { prefix: "/admin/users", role: "admin" },
   { prefix: "/admin/finance", role: "accountant" },
@@ -122,6 +125,7 @@ export const ROUTE_ROLE_REQUIREMENTS: Array<{ prefix: string; role: Role }> = [
   { prefix: "/admin/bookings", role: "staff" },
   { prefix: "/admin/dashboard", role: "staff" },
   { prefix: "/admin", role: "staff" },
+  { prefix: "/org-admin", role: "staff" },
 ];
 
 export function requiredRoleForPath(pathname: string): Role | null {

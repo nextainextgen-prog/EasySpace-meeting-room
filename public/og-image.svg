@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2D4EF5"/>
+      <stop offset="100%" stop-color="#4F6FFC"/>
+    </linearGradient>
+    <radialGradient id="blob1" cx="0.2" cy="0.1" r="0.6">
+      <stop offset="0%" stop-color="#6E8BFF" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#6E8BFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blob2" cx="0.85" cy="0.85" r="0.5">
+      <stop offset="0%" stop-color="#1E3AE8" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#1E3AE8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#blob1)"/>
+  <rect width="1200" height="630" fill="url(#blob2)"/>
+
+  <g transform="translate(120 220)">
+    <rect width="72" height="72" rx="18" fill="white" fill-opacity="0.15"/>
+    <g transform="translate(20 24)" fill="none" stroke="white" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="0" y="4" width="32" height="22" rx="3"/>
+      <path d="M0 11 H32"/>
+      <path d="M8 0 V7"/>
+      <path d="M24 0 V7"/>
+    </g>
+    <text x="92" y="50" font-family="system-ui, -apple-system, 'Plus Jakarta Sans', sans-serif" font-size="42" font-weight="700" fill="white" letter-spacing="-1">EasySpace</text>
+  </g>
+
+  <text x="120" y="380" font-family="system-ui, -apple-system, 'Plus Jakarta Sans', sans-serif" font-size="84" font-weight="800" fill="white" letter-spacing="-2">ระบบจัดการห้องประชุม</text>
+  <text x="120" y="460" font-family="system-ui, -apple-system, 'Plus Jakarta Sans', sans-serif" font-size="48" font-weight="600" fill="white" fill-opacity="0.85" letter-spacing="-1">อัจฉริยะสำหรับตึกของคุณ</text>
+
+  <text x="120" y="555" font-family="system-ui, -apple-system, 'Plus Jakarta Sans', sans-serif" font-size="24" font-weight="500" fill="white" fill-opacity="0.7">Booking · CRM · Finance · Telegram · AI</text>
+</svg>

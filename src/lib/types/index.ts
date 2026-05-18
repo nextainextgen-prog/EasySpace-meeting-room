@@ -5,6 +5,7 @@
  */
 
 export type Role =
+  | "owner"
   | "super_admin"
   | "admin"
   | "staff"

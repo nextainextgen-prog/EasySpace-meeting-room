@@ -20,6 +20,8 @@ import {
   Brain,
   Activity,
   ListTodo,
+  History,
+  UserCircle,
   type LucideIcon,
 } from "lucide-react";
 import type {
@@ -44,6 +46,8 @@ export const navIcons = {
   tasks: ListTodo,
   ai: Sparkles,
   buildings: Building2,
+  audit: History,
+  account: UserCircle,
 } as const satisfies Record<string, LucideIcon>;
 
 export function paymentStatusIcon(status: PaymentStatus): LucideIcon {

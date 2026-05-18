@@ -1,0 +1,17 @@
+{
+  "name": "EasySpace — ระบบจัดการห้องประชุม",
+  "short_name": "EasySpace",
+  "description": "ระบบจัดการและจองห้องประชุมอัจฉริยะ พร้อม AI · Telegram · CRM",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "theme_color": "#2D4EF5",
+  "background_color": "#2D4EF5",
+  "display": "standalone",
+  "start_url": "/"
+}
