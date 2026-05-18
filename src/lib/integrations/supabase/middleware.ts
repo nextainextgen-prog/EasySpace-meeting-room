@@ -7,6 +7,8 @@ type CookieToSet = { name: string; value: string; options: CookieOptions };
 const PUBLIC_PATHS = [
   "/",
   "/login",
+  "/forgot-password",
+  "/reset-password",
   "/api/auth/callback",
   "/api/auth/logout",
   "/book", // /book/[code] landing page must remain public
