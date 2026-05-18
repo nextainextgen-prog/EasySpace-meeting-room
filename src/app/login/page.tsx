@@ -1,138 +1,95 @@
 import Link from "next/link";
-import { Calendar, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
+import { redirect } from "next/navigation";
+import { Calendar } from "lucide-react";
+import { LoginForm } from "./login-form";
+import { getCurrentUser } from "@/lib/auth";
 
 export const metadata = {
   title: "เข้าสู่ระบบ — EasySpace",
 };
 
-export default function LoginPage() {
+const ERROR_MESSAGES: Record<string, string> = {
+  oauth_failed: "เข้าสู่ระบบด้วย Google ไม่สำเร็จ ลองอีกครั้ง",
+  invalid_credentials: "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
+  disabled: "บัญชีถูกปิดใช้งาน ติดต่อแอดมิน",
+  forbidden: "คุณไม่มีสิทธิ์เข้าหน้านี้",
+  signed_out: "ออกจากระบบแล้ว",
+  session_expired: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่",
+};
+
+const NOTICE_MESSAGES: Record<string, string> = {
+  reset_sent: "ส่งลิงก์รีเซ็ตรหัสผ่านไปยังอีเมลของคุณแล้ว",
+  password_updated: "เปลี่ยนรหัสผ่านสำเร็จ เข้าสู่ระบบอีกครั้ง",
+};
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string; error?: string; notice?: string }>;
+}) {
+  const params = await searchParams;
+  const user = await getCurrentUser();
+  if (user) {
+    redirect(params.next ?? "/admin/dashboard");
+  }
+  const errorMessage = params.error ? ERROR_MESSAGES[params.error] : null;
+  const noticeMessage = params.notice ? NOTICE_MESSAGES[params.notice] : null;
+
   return (
-    <div className="min-h-screen grid lg:grid-cols-2">
-      {/* Left — Hero (gradient) */}
-      <div className="hidden lg:flex relative overflow-hidden bg-primary-gradient text-white p-12 flex-col justify-between">
-        <div className="absolute -top-20 -right-10 w-72 h-72 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full bg-white/10 blur-3xl" />
-        <div className="relative">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-card-sm bg-white/15 grid place-items-center">
-              <Calendar size={20} strokeWidth={2} />
-            </div>
-            <span className="text-xl font-bold tracking-tight">EasySpace</span>
+    <div className="relative min-h-screen w-full overflow-hidden bg-[#2D4EF5] flex items-center justify-center px-4 py-10">
+      <BackdropBlobs />
+
+      <main className="relative w-full max-w-md">
+        <div className="flex items-center justify-center gap-2.5 mb-6 text-white">
+          <div className="w-10 h-10 rounded-card-sm bg-white/15 ring-1 ring-white/25 grid place-items-center backdrop-blur-sm">
+            <Calendar size={20} strokeWidth={2} />
           </div>
+          <span className="text-lg font-bold tracking-tight">EasySpace</span>
         </div>
-        <div className="relative">
-          <h1 className="text-4xl font-bold tracking-tighter mb-3">
-            ระบบจัดการห้องประชุม
-            <br />
-            อัจฉริยะสำหรับตึกของคุณ
+
+        <div className="rounded-[28px] bg-white px-8 py-10 sm:px-10 sm:py-11 shadow-[0_30px_80px_-20px_rgba(15,23,42,0.35)]">
+          <h1 className="text-4xl font-bold tracking-tighter text-primary-600">
+            เข้าสู่ระบบ
           </h1>
-          <p className="text-white/80 max-w-md">
-            จัดการ booking · ดูแลลูกค้า · ดูภาพรวมการเงิน · ส่งแจ้งเตือนผ่าน
-            Telegram และให้ AI ทำงานหนักแทนคุณ
-          </p>
-          <div className="mt-10 flex gap-6 text-sm">
-            <div>
-              <p className="text-2xl font-bold tabular-nums">152</p>
-              <p className="text-white/70">ลูกค้า</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold tabular-nums">3,420</p>
-              <p className="text-white/70">การจอง</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold tabular-nums">99.97%</p>
-              <p className="text-white/70">Uptime</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Right — Form */}
-      <div className="flex items-center justify-center p-8">
-        <div className="w-full max-w-sm">
-          <div className="lg:hidden flex items-center gap-2.5 mb-8">
-            <div className="w-10 h-10 rounded-card-sm bg-primary-600 text-white grid place-items-center">
-              <Calendar size={20} strokeWidth={2} />
-            </div>
-            <span className="font-bold tracking-tight text-lg">EasySpace</span>
-          </div>
-
-          <h2 className="text-2xl font-bold tracking-tighter">เข้าสู่ระบบ</h2>
-          <p className="text-sm text-ink-3 mt-1">
-            สำหรับแอดมินและพนักงานในตึก
-          </p>
-
-          <form className="mt-8 space-y-4">
-            <Button
-              variant="secondary"
-              size="lg"
-              className="w-full"
-              type="button"
+          <p className="mt-2 text-sm text-ink-3">
+            ยังไม่มีบัญชี?{" "}
+            <Link
+              href="/contact-admin"
+              className="text-primary-600 font-semibold hover:underline"
             >
-              <span className="inline-flex items-center gap-3">
-                <GoogleIcon />
-                <span>เข้าสู่ระบบด้วย Google</span>
-              </span>
-            </Button>
+              ติดต่อแอดมินตึก
+            </Link>
+          </p>
 
-            <div className="flex items-center gap-3">
-              <span className="flex-1 h-px bg-line" />
-              <span className="text-[11px] text-ink-3 uppercase tracking-[0.08em]">
-                หรือ
-              </span>
-              <span className="flex-1 h-px bg-line" />
+          {errorMessage && (
+            <div className="mt-5 rounded-input bg-red-50 border border-red-100 text-red-700 text-sm px-3.5 py-2.5">
+              {errorMessage}
             </div>
-
-            <div>
-              <Label>Email</Label>
-              <Input type="email" placeholder="you@easyspace.co.th" />
+          )}
+          {!errorMessage && noticeMessage && (
+            <div className="mt-5 rounded-input bg-primary-50 border border-primary-100 text-primary-700 text-sm px-3.5 py-2.5">
+              {noticeMessage}
             </div>
-            <div>
-              <Label>รหัสผ่าน</Label>
-              <Input type="password" placeholder="••••••••••" />
-            </div>
+          )}
 
-            <Button variant="gradient" size="lg" className="w-full" type="submit">
-              เข้าสู่ระบบ
-              <ArrowRight size={16} className="ml-1.5" />
-            </Button>
-
-            <p className="text-center text-xs text-ink-3 pt-4">
-              ยังไม่มีบัญชี? ใช้ลิงก์เชิญที่ได้รับจากแอดมินตึก
-            </p>
-            <p className="text-center text-xs">
-              <Link href="/" className="text-primary-600">
-                กลับสู่หน้าหลัก
-              </Link>
-            </p>
-          </form>
+          <LoginForm next={params.next} />
         </div>
-      </div>
+
+        <p className="mt-6 text-center text-xs text-white/70">
+          EasySpace · ระบบจัดการห้องประชุม · v1.0
+        </p>
+      </main>
     </div>
   );
 }
 
-function GoogleIcon() {
+function BackdropBlobs() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18">
-      <path
-        fill="#4285F4"
-        d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"
-      />
-      <path
-        fill="#34A853"
-        d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
-      />
-      <path
-        fill="#EA4335"
-        d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
-      />
-    </svg>
+    <>
+      <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_20%_10%,#6E8BFF_0%,transparent_55%),radial-gradient(110%_70%_at_85%_15%,#3B5BDB_0%,transparent_55%),radial-gradient(120%_90%_at_70%_100%,#1E3AE8_0%,transparent_55%),linear-gradient(135deg,#2D4EF5_0%,#4F6FFC_100%)]" />
+      <div className="absolute -top-20 -left-16 w-80 h-80 rounded-full bg-white/20 blur-3xl" />
+      <div className="absolute top-1/3 -right-20 w-96 h-96 rounded-full bg-[#A5B4FC]/40 blur-3xl" />
+      <div className="absolute -bottom-24 left-1/4 w-[28rem] h-[28rem] rounded-full bg-[#1E3AE8]/40 blur-3xl" />
+    </>
   );
 }

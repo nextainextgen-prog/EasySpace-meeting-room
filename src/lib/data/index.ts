@@ -3,3 +3,8 @@ export * from "./addons";
 export * from "./customers";
 export * from "./bookings";
 export * from "./telegram";
+export * from "./promotions";
+export * from "./finance";
+export * from "./users";
+export * from "./notifications";
+export * from "./analytics";

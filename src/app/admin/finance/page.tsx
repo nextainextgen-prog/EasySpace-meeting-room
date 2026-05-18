@@ -4,7 +4,6 @@ import {
   Wallet,
   AlertCircle,
   Download,
-  ArrowRight,
   Receipt,
   Sparkles,
   PiggyBank,
@@ -12,16 +11,41 @@ import {
 import { AdminTopbar } from "@/components/admin/topbar";
 import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardSubtitle,
+} from "@/components/ui/card";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { HeroCard } from "@/components/ui/hero-card";
 import { Badge } from "@/components/ui/badge";
 import { IconTile } from "@/components/ui/icon-tile";
-import { todayTotals, outstanding, revenueTrend } from "@/lib/mocks";
+import {
+  todayFinanceTotals,
+  monthFinanceTotals,
+  listOutstanding,
+  cashflowMonthly,
+} from "@/lib/data";
 import { formatBaht, formatCompactBaht, formatDate } from "@/lib/format";
 
-export default function FinancePage() {
-  const max = Math.max(...revenueTrend.map((m) => m.income));
+export const dynamic = "force-dynamic";
+
+export default async function FinancePage() {
+  const [today, month, outstanding, trend] = await Promise.all([
+    todayFinanceTotals(),
+    monthFinanceTotals(),
+    listOutstanding(8),
+    cashflowMonthly(12),
+  ]);
+
+  const max = Math.max(1, ...trend.map((m) => m.income));
+  const outstandingTotal = outstanding.reduce(
+    (s, o) => s + o.outstanding_amount,
+    0,
+  );
+  const monthTargetTHB = 200_000;
+  const targetPct = Math.round((month.income / monthTargetTHB) * 100);
 
   return (
     <>
@@ -38,18 +62,19 @@ export default function FinancePage() {
       <div className="p-6 lg:p-8 max-w-[1600px] w-full mx-auto space-y-5">
         <PageHeader
           title="ภาพรวมการเงิน"
-          description="AI Daily Brief · sync กับ booking real-time"
+          description="ข้อมูลจาก Supabase real-time · sync กับ booking"
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <div className="lg:col-span-1">
             <HeroCard
               eyebrow="รายรับวันนี้"
-              value={formatBaht(todayTotals.income)}
+              value={formatBaht(today.income)}
               trailing={
                 <span className="inline-flex items-center gap-1.5">
                   <TrendingUp size={14} />
-                  +18% เทียบเมื่อวาน · 8 รายการ
+                  ค่าใช้จ่ายวันนี้ {formatBaht(today.expense)} · กำไรสุทธิ{" "}
+                  {formatBaht(today.net)}
                 </span>
               }
               cta={{ label: "ดูรายการ Income", href: "#" }}
@@ -58,40 +83,38 @@ export default function FinancePage() {
           <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-4">
             <KpiCard
               label="รายรับเดือนนี้"
-              value={formatCompactBaht(58400)}
-              hint="29% ของเป้า ฿200K"
+              value={formatCompactBaht(month.income)}
+              hint={`${targetPct}% ของเป้า ${formatCompactBaht(monthTargetTHB)}`}
               icon={Wallet}
               iconTone="success"
             />
             <KpiCard
-              label="กำไรสุทธิ"
-              value={formatCompactBaht(48200)}
-              delta={{ value: 14 }}
+              label="กำไรสุทธิเดือนนี้"
+              value={formatCompactBaht(month.net)}
               icon={PiggyBank}
             />
             <KpiCard
               label="ค้างชำระ"
-              value={formatBaht(8500)}
-              hint="3 ราย — 1 เกินกำหนด"
+              value={formatBaht(outstandingTotal)}
+              hint={`${outstanding.length} ราย`}
               icon={AlertCircle}
               iconTone="danger"
             />
             <KpiCard
               label="รายจ่ายเดือนนี้"
-              value={formatCompactBaht(8200)}
-              delta={{ value: 22 }}
+              value={formatCompactBaht(month.expense)}
               icon={TrendingDown}
               iconTone="warning"
             />
             <KpiCard
-              label="Forecast เดือนนี้"
-              value={formatCompactBaht(185000)}
-              hint="confidence 78%"
+              label="กำไร %"
+              value={`${today.margin}%`}
+              hint="วันนี้"
               icon={Sparkles}
             />
             <KpiCard
-              label="ใบเสร็จที่ออกแล้ว"
-              value="148 ใบ"
+              label="ใบเสร็จเดือนนี้"
+              value={`${month.receiptCount} ใบ`}
               icon={Receipt}
             />
           </div>
@@ -115,8 +138,8 @@ export default function FinancePage() {
             </div>
           </CardHeader>
           <div className="grid grid-cols-12 gap-3 h-48 items-end">
-            {revenueTrend.map((m) => (
-              <div key={m.month} className="flex flex-col items-center gap-1">
+            {trend.map((m) => (
+              <div key={m.key} className="flex flex-col items-center gap-1">
                 <div className="w-full flex items-end gap-0.5 h-40">
                   <div
                     className="flex-1 rounded-t bg-gradient-to-t from-primary-700 to-primary-400"
@@ -140,70 +163,86 @@ export default function FinancePage() {
             <CardHeader>
               <div>
                 <CardTitle>Outstanding (ค้างชำระ)</CardTitle>
-                <CardSubtitle>{outstanding.length} รายการ · {formatBaht(8500)}</CardSubtitle>
+                <CardSubtitle>
+                  {outstanding.length} รายการ · {formatBaht(outstandingTotal)}
+                </CardSubtitle>
               </div>
               <IconTile icon={AlertCircle} tone="warning" size="sm" />
             </CardHeader>
-            <ul className="space-y-3">
-              {outstanding.map((o) => (
-                <li
-                  key={o.id}
-                  className="flex items-center gap-3 p-3 rounded-card-sm border border-line-soft"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm tracking-tight truncate">
-                      {o.customer}
-                    </p>
-                    <p className="text-xs text-ink-3">
-                      {o.bookingCode} · กำหนด {formatDate(o.dueDate)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold tabular-nums">
-                      {formatBaht(o.amount)}
-                    </p>
-                    <Badge
-                      tone={o.daysOverdue > 0 ? "danger" : "warning"}
-                      className="mt-1"
-                    >
-                      {o.daysOverdue > 0
-                        ? `เกิน ${o.daysOverdue} วัน`
-                        : "ภายในกำหนด"}
-                    </Badge>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            {outstanding.length === 0 ? (
+              <p className="text-sm text-ink-3 text-center py-8 tracking-tight">
+                ไม่มีรายการค้างชำระ
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {outstanding.map((o) => (
+                  <li
+                    key={o.id}
+                    className="flex items-center gap-3 p-3 rounded-card-sm border border-line-soft"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm tracking-tight truncate">
+                        {o.customer_name}
+                      </p>
+                      <p className="text-xs text-ink-3">
+                        {o.reference_code} · กำหนด {formatDate(o.due_at)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold tabular-nums">
+                        {formatBaht(o.outstanding_amount)}
+                      </p>
+                      <Badge
+                        tone={o.days_overdue > 0 ? "danger" : "warning"}
+                        className="mt-1"
+                      >
+                        {o.days_overdue > 0
+                          ? `เกิน ${o.days_overdue} วัน`
+                          : "ภายในกำหนด"}
+                      </Badge>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           <Card>
             <CardHeader>
               <div>
                 <CardTitle>Today by Payment Method</CardTitle>
-                <CardSubtitle>{formatBaht(todayTotals.income)} · 8 รายการ</CardSubtitle>
+                <CardSubtitle>
+                  {formatBaht(today.income)} · {today.byMethod.length} ช่องทาง
+                </CardSubtitle>
               </div>
             </CardHeader>
-            <ul className="space-y-3">
-              {todayTotals.byMethod.map((m) => {
-                const pct = (m.amount / todayTotals.income) * 100;
-                return (
-                  <li key={m.method}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-ink-2">{m.method}</span>
-                      <span className="font-semibold tabular-nums">
-                        {formatBaht(m.amount)}
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-pill bg-surface-subtle overflow-hidden">
-                      <div
-                        className="h-full bg-primary-gradient"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            {today.byMethod.length === 0 ? (
+              <p className="text-sm text-ink-3 text-center py-8 tracking-tight">
+                วันนี้ยังไม่มียอดเข้า
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {today.byMethod.map((m) => {
+                  const pct = (m.amount / today.income) * 100;
+                  return (
+                    <li key={m.method}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-ink-2">{m.method}</span>
+                        <span className="font-semibold tabular-nums">
+                          {formatBaht(m.amount)}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-pill bg-surface-subtle overflow-hidden">
+                        <div
+                          className="h-full bg-primary-gradient"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </Card>
         </div>
       </div>

@@ -1,166 +1,201 @@
 import {
   Calendar,
-  CalendarPlus,
   Clock,
   Users,
   Sparkles,
-  Building2,
-  Bell,
-  User,
   ChevronRight,
 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardSubtitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { IconTile } from "@/components/ui/icon-tile";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { HeroCard } from "@/components/ui/hero-card";
+import { requireAuth } from "@/lib/auth";
+import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
+import { format } from "date-fns";
+import { th } from "date-fns/locale";
 
-const upcoming = [
-  {
-    id: "b1",
-    title: "Sprint Planning",
-    when: "พรุ่งนี้ 10:00 – 12:00",
-    room: "MASTER ROOM",
-    attendees: 5,
-    status: "confirmed",
-  },
-  {
-    id: "b2",
-    title: "Team Workshop",
-    when: "ศุกร์ 14:00 – 16:00",
-    room: "MEETING ROOM",
-    attendees: 12,
-    status: "pending",
-  },
-  {
-    id: "b3",
-    title: "1-on-1 with Manager",
-    when: "จันทร์หน้า 09:00 – 10:00",
-    room: "PRIME ROOM",
-    attendees: 2,
-    status: "confirmed",
-  },
-];
+interface UpcomingBooking {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  attendees_count: number | null;
+  booking_status: string;
+  internal_title: string | null;
+  room: { name: string } | null;
+}
 
-export default function MemberDashboard() {
+export default async function MemberDashboard() {
+  const profile = await requireAuth();
+  const supabase = createSupabaseAdminClient();
+
+  // upcoming bookings for this member
+  const now = new Date().toISOString();
+  const { data: upcomingRaw } = await supabase
+    .from("bookings")
+    .select(
+      "id, starts_at, ends_at, attendees_count, booking_status, internal_title, room:rooms(name)",
+    )
+    .gte("starts_at", now)
+    .or(`member_id.eq.${profile.id},created_by.eq.${profile.id}`)
+    .order("starts_at")
+    .limit(3);
+  const upcoming = (upcomingRaw ?? []) as unknown as UpcomingBooking[];
+
+  // member quota lookup (Phase 1 simplification — flat 40 hrs)
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const { data: monthBookings } = await supabase
+    .from("bookings")
+    .select("starts_at, ends_at")
+    .or(`member_id.eq.${profile.id},created_by.eq.${profile.id}`)
+    .gte("starts_at", monthStart.toISOString());
+  const hoursUsed = (
+    (monthBookings ?? []) as Array<{ starts_at: string; ends_at: string }>
+  ).reduce((sum, b) => {
+    const diffHrs =
+      (new Date(b.ends_at).getTime() - new Date(b.starts_at).getTime()) /
+      3_600_000;
+    return sum + diffHrs;
+  }, 0);
+  const quotaTotal = 40;
+
   return (
-    <div className="min-h-screen bg-surface-page">
-      <header className="bg-white border-b border-line sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto h-16 px-6 flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <Badge tone="primary" className="!text-[11px]">
-              <Building2 size={12} className="mr-1" />
-              บริษัท ABC จำกัด
-            </Badge>
-            <span className="font-bold tracking-tight">EasySpace</span>
-          </div>
-          <div className="flex-1" />
-          <div className="hidden md:flex items-center gap-2 text-xs">
-            <span className="text-ink-3">Quota:</span>
-            <span className="font-semibold tabular-nums">12/40 ชม.</span>
-            <div className="w-28 h-1.5 rounded-pill bg-surface-subtle overflow-hidden">
-              <div
-                className="h-full bg-primary-600"
-                style={{ width: "30%" }}
-              />
+    <div className="max-w-6xl mx-auto p-4 md:p-6 lg:p-8 space-y-5">
+      <div>
+        <h1 className="text-2xl md:text-3xl font-bold tracking-tighter">
+          สวัสดี {profile.full_name?.split(" ")[0] ?? profile.email}
+        </h1>
+        <p className="text-ink-3 tracking-tight">
+          {upcoming.length === 0
+            ? "ยังไม่มีการจองในเร็วๆ นี้"
+            : `คุณมีการจอง ${upcoming.length} รายการที่กำลังจะมาถึง`}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <KpiCard
+          label="Quota เดือนนี้"
+          value={`${hoursUsed.toFixed(1)}/${quotaTotal} ชม.`}
+          icon={Clock}
+        />
+        <KpiCard
+          label="จองล่าสุด"
+          value={
+            upcoming[0]
+              ? format(new Date(upcoming[0].starts_at), "d MMM HH:mm", {
+                  locale: th,
+                })
+              : "—"
+          }
+          icon={Calendar}
+        />
+        <KpiCard label="สัปดาห์นี้" value={`${upcoming.length} รายการ`} icon={Sparkles} />
+        <KpiCard label="ทีม" value="—" icon={Users} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="lg:col-span-1">
+          <HeroCard
+            eyebrow="Quick Book"
+            value="3 คลิก"
+            trailing="เลือก slot · ใส่หัวข้อ · ยืนยัน"
+            cta={{ label: "จองห้องเลย", href: "/app/calendar" }}
+          />
+        </div>
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <div>
+              <CardTitle>Upcoming Bookings</CardTitle>
+              <CardSubtitle>
+                {upcoming.length} รายการถัดไป
+              </CardSubtitle>
             </div>
-          </div>
-          <button className="w-10 h-10 rounded-pill bg-surface-subtle text-ink-2 hover:bg-line grid place-items-center transition">
-            <Bell size={16} strokeWidth={1.75} />
-          </button>
-          <button className="w-10 h-10 rounded-pill bg-primary-600 text-white grid place-items-center font-semibold text-xs">
-            <User size={16} strokeWidth={1.75} />
-          </button>
-        </div>
-      </header>
-
-      <div className="max-w-6xl mx-auto p-6 lg:p-8 space-y-5">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tighter">
-            สวัสดี คุณสมชาย
-          </h1>
-          <p className="text-ink-3">วันนี้คุณมีประชุม 2 รายการ</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard label="Quota เดือนนี้" value="12/40 ชม." icon={Clock} />
-          <KpiCard label="จองล่าสุด" value="พรุ่งนี้" icon={Calendar} />
-          <KpiCard label="Streak" value="5 สัปดาห์" icon={Sparkles} />
-          <KpiCard label="ทีม" value="28 คน" icon={Users} />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <div className="lg:col-span-1">
-            <HeroCard
-              eyebrow="Quick Book"
-              value="3 คลิก"
-              trailing="เลือก slot · ใส่หัวข้อ · ยืนยัน"
-              cta={{ label: "จองห้องเลย", href: "/app/calendar" }}
-            />
-          </div>
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <div>
-                <CardTitle>Upcoming Bookings</CardTitle>
-                <CardSubtitle>{upcoming.length} รายการถัดไป</CardSubtitle>
-              </div>
-              <Button variant="ghost" size="sm" iconRight={<ChevronRight size={14} />}>
-                ดูทั้งหมด
-              </Button>
-            </CardHeader>
+            <Button
+              variant="ghost"
+              size="sm"
+              iconRight={<ChevronRight size={14} />}
+            >
+              <a href="/app/my-bookings">ดูทั้งหมด</a>
+            </Button>
+          </CardHeader>
+          {upcoming.length === 0 ? (
+            <p className="text-sm text-ink-3 text-center py-8 tracking-tight">
+              ยังไม่มีการจอง — ลองจองรอบแรกของคุณดูเลย
+            </p>
+          ) : (
             <ul className="space-y-3">
               {upcoming.map((b) => (
                 <li
                   key={b.id}
-                  className="flex items-center gap-4 p-3 rounded-card-sm surface-subtle"
+                  className="flex items-center gap-4 p-3 rounded-card-sm bg-surface-subtle"
                 >
                   <span
                     className={`w-1 h-12 rounded-full ${
-                      b.status === "confirmed"
+                      b.booking_status === "confirmed"
                         ? "bg-emerald-500"
                         : "bg-amber-500"
                     }`}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold tracking-tight">{b.title}</p>
+                    <p className="font-semibold tracking-tight truncate">
+                      {b.internal_title ?? "Booking"}
+                    </p>
                     <p className="text-xs text-ink-3 tabular-nums">
-                      {b.when} · {b.room} · {b.attendees} attendees
+                      {format(new Date(b.starts_at), "EEE d MMM HH:mm", {
+                        locale: th,
+                      })}
+                      {" – "}
+                      {format(new Date(b.ends_at), "HH:mm")} ·{" "}
+                      {b.room?.name ?? "—"}
+                      {b.attendees_count ? ` · ${b.attendees_count} คน` : ""}
                     </p>
                   </div>
                   <Badge
-                    tone={b.status === "confirmed" ? "success" : "warning"}
+                    tone={
+                      b.booking_status === "confirmed" ? "success" : "warning"
+                    }
                   >
-                    {b.status === "confirmed" ? "ยืนยันแล้ว" : "Pending"}
+                    {b.booking_status === "confirmed"
+                      ? "ยืนยันแล้ว"
+                      : "รออนุมัติ"}
                   </Badge>
                 </li>
               ))}
             </ul>
-          </Card>
-        </div>
-
-        <Card className="!bg-primary-50/40 !border-primary-100">
-          <div className="flex items-start gap-3">
-            <IconTile icon={Sparkles} tone="primary" />
-            <div className="flex-1">
-              <p className="font-semibold tracking-tight text-primary-800">
-                AI Suggestion
-              </p>
-              <p className="text-sm text-ink-2 mt-1">
-                ทีมคุณมักประชุมวันพุธ 10:00 — ต้องการให้ตั้ง recurring booking ทุกพุธไหม?
-              </p>
-              <div className="mt-3 flex gap-2">
-                <Button size="sm" variant="primary">
-                  Set up
-                </Button>
-                <Button size="sm" variant="ghost">
-                  ปิด
-                </Button>
-              </div>
-            </div>
-          </div>
+          )}
         </Card>
       </div>
+
+      <Card className="!bg-primary-50/40 !border-primary-100">
+        <div className="flex items-start gap-3">
+          <IconTile icon={Sparkles} tone="primary" />
+          <div className="flex-1">
+            <p className="font-semibold tracking-tight text-primary-800">
+              AI Suggestion
+            </p>
+            <p className="text-sm text-ink-2 mt-1 tracking-tight">
+              เทรนด์ของทีมคุณ: ประชุมส่วนใหญ่ตกวันพุธ 10:00 — สนใจตั้ง recurring
+              booking ทุกพุธหรือไม่?
+            </p>
+            <div className="mt-3 flex gap-2">
+              <Button size="sm" variant="primary">
+                ตั้งค่า
+              </Button>
+              <Button size="sm" variant="ghost">
+                ปิด
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

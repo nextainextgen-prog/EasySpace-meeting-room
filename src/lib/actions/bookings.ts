@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import {
   upsertCustomerForBooking,
   generateBookingCode,
+  findCustomerCandidates,
 } from "@/lib/data";
 import { dispatchEvent } from "@/lib/server/notifications";
 import {
@@ -14,6 +15,76 @@ import {
   bookingCancelledTemplate,
 } from "@/lib/templates/telegram";
 import type { PaymentMethod, PaymentStatus } from "@/lib/types";
+
+/**
+ * Live conflict check used by the booking form. Returns overlapping
+ * bookings for the same room (excluding cancelled / no-show) so the UI can
+ * warn before submission. Safe to call repeatedly — read-only.
+ */
+export async function checkBookingConflict(input: {
+  roomId: string;
+  startsAt: string;
+  endsAt: string;
+  excludeBookingId?: string;
+}): Promise<
+  Array<{
+    id: string;
+    reference_code: string;
+    starts_at: string;
+    ends_at: string;
+    customer_name: string | null;
+  }>
+> {
+  if (!input.roomId || !input.startsAt || !input.endsAt) return [];
+  if (new Date(input.endsAt) <= new Date(input.startsAt)) return [];
+
+  const supabase = createSupabaseAdminClient();
+  let query = supabase
+    .from("bookings")
+    .select(
+      "id, reference_code, starts_at, ends_at, customer:customers(display_name)",
+    )
+    .eq("room_id", input.roomId)
+    .in("booking_status", ["pending", "confirmed", "in_use"])
+    .lt("starts_at", input.endsAt)
+    .gt("ends_at", input.startsAt);
+
+  if (input.excludeBookingId) {
+    query = query.neq("id", input.excludeBookingId);
+  }
+
+  const { data } = await query;
+  return ((data ?? []) as unknown as Array<{
+    id: string;
+    reference_code: string;
+    starts_at: string;
+    ends_at: string;
+    customer: { display_name: string } | null;
+  }>).map((b) => ({
+    id: b.id,
+    reference_code: b.reference_code,
+    starts_at: b.starts_at,
+    ends_at: b.ends_at,
+    customer_name: b.customer?.display_name ?? null,
+  }));
+}
+
+/** Fuzzy customer lookup for booking form autocomplete. */
+export async function searchCustomers(query: string) {
+  if (!query.trim() || query.trim().length < 2) return [];
+  const candidates = await findCustomerCandidates({ name: query.trim() });
+  return candidates.slice(0, 6).map((c) => ({
+    id: c.id,
+    display_name: c.display_name,
+    phone: c.phone,
+    email: c.email,
+    type: c.type,
+    total_bookings: c.total_bookings,
+    total_spent: c.total_spent,
+    tags: c.tags,
+    similarity: c.similarity,
+  }));
+}
 
 const CreateBookingSchema = z.object({
   customer: z.object({

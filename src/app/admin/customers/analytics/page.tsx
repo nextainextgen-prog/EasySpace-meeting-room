@@ -3,39 +3,47 @@ import {
   UserPlus,
   Repeat,
   TrendingDown,
-  TrendingUp,
   Brain,
   Sparkles,
-  AlertCircle,
 } from "lucide-react";
 import { AdminTopbar } from "@/components/admin/topbar";
 import { PageHeader } from "@/components/admin/page-header";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardSubtitle,
+} from "@/components/ui/card";
 import { KpiCard } from "@/components/ui/kpi-card";
-import { Badge } from "@/components/ui/badge";
 import { IconTile } from "@/components/ui/icon-tile";
+import {
+  rfmSegments,
+  cohortRetention,
+  customerKpis,
+  listCustomers,
+} from "@/lib/data";
 import { formatBaht } from "@/lib/format";
 
-const rfmSegments = [
-  { name: "Champions", code: "555", count: 24, color: "bg-primary-600", x: 80, y: 85 },
-  { name: "Loyal", code: "543", count: 55, color: "bg-primary-400", x: 70, y: 70 },
-  { name: "Potential Loyalist", code: "532", count: 38, color: "bg-emerald-500", x: 60, y: 50 },
-  { name: "New Customers", code: "511", count: 12, color: "bg-blue-400", x: 85, y: 25 },
-  { name: "Need Attention", code: "322", count: 18, color: "bg-amber-500", x: 40, y: 35 },
-  { name: "At Risk", code: "213", count: 8, color: "bg-red-500", x: 25, y: 60 },
-  { name: "Hibernating", code: "232", count: 15, color: "bg-slate-400", x: 20, y: 30 },
-  { name: "Lost", code: "111", count: 5, color: "bg-slate-300", x: 10, y: 10 },
-];
+export const dynamic = "force-dynamic";
 
-const cohorts = [
-  { label: "ม.ค. 26", size: 50, retention: [100, 60, 45, 35, 30, 28, 25] },
-  { label: "ก.พ. 26", size: 65, retention: [100, 55, 40, 32, 28, 25, null] },
-  { label: "มี.ค. 26", size: 72, retention: [100, 62, 48, 40, 35, null, null] },
-  { label: "เม.ย. 26", size: 80, retention: [100, 65, 50, 42, null, null, null] },
-  { label: "พ.ค. 26", size: 95, retention: [100, 68, 55, null, null, null, null] },
-];
+export default async function AnalyticsPage() {
+  const [segments, cohorts, kpis, customers] = await Promise.all([
+    rfmSegments(),
+    cohortRetention(5, 7),
+    customerKpis(),
+    listCustomers({ limit: 500 }),
+  ]);
 
-export default function AnalyticsPage() {
+  const championCount =
+    segments.find((s) => s.code === "555")?.count ?? 0;
+  const atRiskCustomers = customers
+    .filter((c) => c.churn_risk === "high")
+    .sort((a, b) => Number(b.total_spent) - Number(a.total_spent))
+    .slice(0, 3);
+  const upsellCandidates = customers
+    .filter((c) => c.tags.includes("VIP") || c.total_bookings >= 10)
+    .slice(0, 3);
+
   return (
     <>
       <AdminTopbar
@@ -50,28 +58,34 @@ export default function AnalyticsPage() {
         />
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          <KpiCard label="MAU" value="215 ราย" delta={{ value: 8 }} icon={Users} />
+          <KpiCard
+            label="MAU"
+            value={`${kpis.mau} ราย`}
+            icon={Users}
+          />
           <KpiCard
             label="ลูกค้าใหม่ (30d)"
-            value="42 ราย"
-            delta={{ value: 12 }}
+            value={`${kpis.newCount} ราย`}
             icon={UserPlus}
             iconTone="success"
           />
           <KpiCard
             label="Returning %"
-            value="68%"
-            delta={{ value: 4 }}
+            value={`${kpis.returningPct}%`}
             icon={Repeat}
           />
           <KpiCard
-            label="Churn Rate"
-            value="15%"
-            delta={{ value: -2 }}
+            label="Churn rate"
+            value={`${kpis.churnRate}%`}
             icon={TrendingDown}
             iconTone="warning"
           />
-          <KpiCard label="CLV avg" value={formatBaht(18500)} icon={Brain} iconTone="primary" />
+          <KpiCard
+            label="CLV avg"
+            value={formatBaht(kpis.clv)}
+            icon={Brain}
+            iconTone="primary"
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -79,7 +93,9 @@ export default function AnalyticsPage() {
             <CardHeader>
               <div>
                 <CardTitle>RFM Quadrant</CardTitle>
-                <CardSubtitle>11 segments · ตำแหน่ง = Recency × Monetary</CardSubtitle>
+                <CardSubtitle>
+                  8 segments · ตำแหน่ง = Recency × Monetary
+                </CardSubtitle>
               </div>
               <IconTile icon={Brain} tone="primary" size="sm" />
             </CardHeader>
@@ -92,24 +108,24 @@ export default function AnalyticsPage() {
               </div>
               <div className="absolute inset-x-0 top-1/2 h-px bg-line" />
               <div className="absolute inset-y-0 left-1/2 w-px bg-line" />
-              {rfmSegments.map((s) => (
+              {segments.map((s) => (
                 <div
                   key={s.name}
                   className={`absolute -translate-x-1/2 -translate-y-1/2 ${s.color} rounded-pill text-white text-[10px] font-semibold grid place-items-center shadow-card`}
                   style={{
                     left: `${s.x}%`,
                     top: `${100 - s.y}%`,
-                    width: `${24 + s.count / 2}px`,
-                    height: `${24 + s.count / 2}px`,
+                    width: `${24 + Math.min(40, s.count * 1.5)}px`,
+                    height: `${24 + Math.min(40, s.count * 1.5)}px`,
                   }}
-                  title={s.name}
+                  title={`${s.name} · ${s.count} ราย`}
                 >
                   {s.count}
                 </div>
               ))}
             </div>
             <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-              {rfmSegments.map((s) => (
+              {segments.map((s) => (
                 <div key={s.code} className="flex items-center gap-2">
                   <span className={`w-2 h-2 rounded-pill ${s.color}`} />
                   <span className="flex-1 text-ink-2 truncate">{s.name}</span>
@@ -141,7 +157,7 @@ export default function AnalyticsPage() {
                 </thead>
                 <tbody>
                   {cohorts.map((c) => (
-                    <tr key={c.label} className="border-t border-line-soft">
+                    <tr key={c.key} className="border-t border-line-soft">
                       <td className="py-2 pr-2 font-medium">{c.label}</td>
                       <td className="py-2 pr-2 text-ink-3">{c.size}</td>
                       {c.retention.map((r, i) => (
@@ -150,7 +166,9 @@ export default function AnalyticsPage() {
                             <div
                               className="rounded text-white text-center py-1 font-semibold"
                               style={{
-                                background: `rgba(45, 78, 245, ${0.15 + (r / 100) * 0.8})`,
+                                background: `rgba(45, 78, 245, ${
+                                  0.15 + (r / 100) * 0.8
+                                })`,
                               }}
                             >
                               {r}%
@@ -177,33 +195,34 @@ export default function AnalyticsPage() {
             <IconTile icon={Sparkles} tone="primary" size="sm" />
           </CardHeader>
           <div className="grid md:grid-cols-3 gap-4">
-            {[
-              {
-                title: "Champions เพิ่ม 5 ราย",
-                desc: "จาก Loyal segment — ส่งของขวัญ + Personal call",
-                tone: "success",
-              },
-              {
-                title: "บริษัท ก. ห่างหาย 95 วัน",
-                desc: "เคยจองเดือนละ 2 ครั้ง — โทรหา personal",
-                tone: "warning",
-              },
-              {
-                title: "12 VIP มีโอกาส upsell",
-                desc: "เสนอแพ็กเกจเต็มวัน — Expected +฿8K/เดือน",
-                tone: "info",
-              },
-            ].map((i) => (
-              <div
-                key={i.title}
-                className="p-4 rounded-card-sm border border-line bg-white"
-              >
-                <p className="font-semibold text-sm tracking-tight">
-                  {i.title}
-                </p>
-                <p className="text-xs text-ink-3 mt-1.5">{i.desc}</p>
-              </div>
-            ))}
+            <div className="p-4 rounded-card-sm border border-line bg-white">
+              <p className="font-semibold text-sm tracking-tight">
+                Champions {championCount} ราย
+              </p>
+              <p className="text-xs text-ink-3 mt-1.5">
+                ลูกค้า RFM 5/5/5 — ส่งของขวัญและ personal call จะรักษาฐาน
+                lifetime value
+              </p>
+            </div>
+            <div className="p-4 rounded-card-sm border border-line bg-white">
+              <p className="font-semibold text-sm tracking-tight">
+                At Risk {atRiskCustomers.length} ราย
+              </p>
+              <p className="text-xs text-ink-3 mt-1.5">
+                {atRiskCustomers
+                  .map((c) => c.display_name)
+                  .join(", ") || "—"}{" "}
+                — โทรหา personal ก่อนหายไป
+              </p>
+            </div>
+            <div className="p-4 rounded-card-sm border border-line bg-white">
+              <p className="font-semibold text-sm tracking-tight">
+                Upsell candidates {upsellCandidates.length} ราย
+              </p>
+              <p className="text-xs text-ink-3 mt-1.5">
+                เสนอแพ็กเกจเต็มวันหรือ recurring — เห็นใช้บ่อยและเป็น VIP
+              </p>
+            </div>
           </div>
         </Card>
       </div>

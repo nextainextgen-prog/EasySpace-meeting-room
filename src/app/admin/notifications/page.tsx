@@ -1,21 +1,21 @@
-import { Bell, CheckCircle2, AlertCircle, Sparkles, Filter, Settings } from "lucide-react";
+import {
+  CheckCircle2,
+  Settings,
+  Bell as BellIcon,
+} from "lucide-react";
 import { AdminTopbar } from "@/components/admin/topbar";
 import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { IconTile } from "@/components/ui/icon-tile";
-import { notifications } from "@/lib/mocks";
+import { EmptyState } from "@/components/ui/empty-state";
+import { listNotifications, notificationCountsByCategory } from "@/lib/data";
 import { notificationLevelIcon } from "@/lib/icons";
 import { relativeFromNow } from "@/lib/format";
+import { NotificationsFilter } from "./filter";
 
-const filters = [
-  { key: "all", label: "ทั้งหมด", count: notifications.length },
-  { key: "time", label: "เวลา", count: 1 },
-  { key: "finance", label: "การเงิน", count: 2 },
-  { key: "ai_digest", label: "AI รายงาน", count: 1 },
-  { key: "system", label: "ระบบ", count: 0 },
-];
+export const dynamic = "force-dynamic";
 
 const toneByLevel: Record<string, "danger" | "warning" | "info" | "success"> = {
   danger: "danger",
@@ -24,7 +24,20 @@ const toneByLevel: Record<string, "danger" | "warning" | "info" | "success"> = {
   success: "success",
 };
 
-export default function NotificationsPage() {
+const CATEGORY_LABEL: Record<string, string> = {
+  time: "เวลา",
+  finance: "การเงิน",
+  ai_digest: "AI รายงาน",
+  ai_insight: "AI insight",
+  system: "ระบบ",
+};
+
+export default async function NotificationsPage() {
+  const [items, counts] = await Promise.all([
+    listNotifications({ limit: 50 }),
+    notificationCountsByCategory(),
+  ]);
+
   return (
     <>
       <AdminTopbar
@@ -48,34 +61,25 @@ export default function NotificationsPage() {
           }
         />
 
-        <Card className="!p-3">
-          <div className="flex flex-wrap gap-1">
-            {filters.map((f, i) => (
-              <button
-                key={f.key}
-                className={`px-4 py-2 rounded-pill text-sm font-medium transition ${
-                  i === 0
-                    ? "bg-primary-600 text-white"
-                    : "text-ink-2 hover:bg-surface-subtle"
-                }`}
-              >
-                {f.label}
-                <span className="ml-2 text-[11px] opacity-80 tabular-nums">
-                  {f.count}
-                </span>
-              </button>
-            ))}
-          </div>
-        </Card>
-
-        <ul className="space-y-3">
-          {notifications.map((n) => {
+        <NotificationsFilter
+          counts={counts}
+          labels={CATEGORY_LABEL}
+          items={items.map((n) => ({
+            id: n.id,
+            category: n.category,
+            level: n.level,
+            title: n.title,
+            body: n.body,
+            read: n.read_at !== null,
+            createdAt: n.created_at,
+          }))}
+          renderItem={(n) => {
             const Icon = notificationLevelIcon(n.level);
             return (
               <li
                 key={n.id}
-                className={`flex gap-4 p-5 surface-card transition ${
-                  !n.read ? "border-l-4 !border-l-primary-600" : ""
+                className={`flex gap-4 p-5 rounded-card border border-line bg-white transition ${
+                  !n.read ? "border-l-4 border-l-primary-600" : ""
                 }`}
               >
                 <IconTile icon={Icon} tone={toneByLevel[n.level]} />
@@ -85,10 +89,12 @@ export default function NotificationsPage() {
                       <p className="font-semibold tracking-tight text-ink-1">
                         {n.title}
                       </p>
-                      <p className="text-sm text-ink-2 mt-0.5">{n.body}</p>
+                      {n.body && (
+                        <p className="text-sm text-ink-2 mt-0.5">{n.body}</p>
+                      )}
                     </div>
                     <Badge tone={toneByLevel[n.level]}>
-                      {n.category}
+                      {CATEGORY_LABEL[n.category] ?? n.category}
                     </Badge>
                   </div>
                   <p className="text-[11px] text-ink-3 mt-2">
@@ -97,8 +103,17 @@ export default function NotificationsPage() {
                 </div>
               </li>
             );
-          })}
-        </ul>
+          }}
+          empty={
+            <Card>
+              <EmptyState
+                icon={BellIcon}
+                title="ยังไม่มีการแจ้งเตือน"
+                description="ตั้งค่า Telegram + Cron จะเริ่มสร้าง notification ในระบบให้คุณอัตโนมัติ"
+              />
+            </Card>
+          }
+        />
       </div>
     </>
   );

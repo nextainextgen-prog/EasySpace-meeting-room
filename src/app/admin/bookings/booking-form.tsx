@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useEffect, useRef } from "react";
 import {
   Check,
   Save,
   Search,
   Sparkles,
   AlertCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,9 +15,14 @@ import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { formatBaht } from "@/lib/format";
-import { createBooking } from "@/lib/actions/bookings";
+import {
+  createBooking,
+  checkBookingConflict,
+  searchCustomers,
+} from "@/lib/actions/bookings";
 import type { Room, RoomPackage } from "@/lib/data/rooms";
 import type { Addon } from "@/lib/data/addons";
+import { format } from "date-fns";
 
 interface Props {
   rooms: Array<Room & { packages: RoomPackage[] }>;
@@ -61,6 +67,38 @@ type PaymentStatus = (typeof paymentStatuses)[number]["id"];
 type Source = (typeof sources)[number]["id"];
 type CType = (typeof customerTypes)[number]["id"];
 
+const ALL_SLOTS_TIMES = [
+  ...["08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30"],
+  ...["13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00"],
+  ...[
+    "17:00", "17:30", "18:00", "18:30", "19:00", "19:30",
+    "20:00", "20:30", "21:00", "21:30",
+  ],
+];
+
+function computeStartsAtISO(slots: string[], dateStr: string) {
+  if (slots.length === 0 || !dateStr) return "";
+  const sorted = [...slots].sort(
+    (a, b) => ALL_SLOTS_TIMES.indexOf(a) - ALL_SLOTS_TIMES.indexOf(b),
+  );
+  const [h, m] = sorted[0].split(":").map(Number);
+  const d = new Date(`${dateStr}T00:00:00+07:00`);
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
+}
+
+function computeEndsAtISO(slots: string[], dateStr: string) {
+  if (slots.length === 0 || !dateStr) return "";
+  const sorted = [...slots].sort(
+    (a, b) => ALL_SLOTS_TIMES.indexOf(a) - ALL_SLOTS_TIMES.indexOf(b),
+  );
+  const last = sorted[sorted.length - 1];
+  const [h, m] = last.split(":").map(Number);
+  const d = new Date(`${dateStr}T00:00:00+07:00`);
+  d.setHours(h, m + 30, 0, 0);
+  return d.toISOString();
+}
+
 export function BookingForm({ rooms, addons }: Props) {
   const allSlots = [...morningSlots, ...afternoonSlots, ...eveningSlots];
   const today = new Date().toISOString().slice(0, 10);
@@ -90,6 +128,33 @@ export function BookingForm({ rooms, addons }: Props) {
     | { kind: "error"; message: string }
     | null
   >(null);
+
+  // Live conflict + customer suggestion state
+  const [conflicts, setConflicts] = useState<
+    Array<{
+      id: string;
+      reference_code: string;
+      starts_at: string;
+      ends_at: string;
+      customer_name: string | null;
+    }>
+  >([]);
+  const [conflictChecking, setConflictChecking] = useState(false);
+  const [suggestions, setSuggestions] = useState<
+    Array<{
+      id: string;
+      display_name: string;
+      phone: string | null;
+      email: string | null;
+      type: string;
+      total_bookings: number;
+      total_spent: number;
+      tags: string[];
+      similarity: number;
+    }>
+  >([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const customerInputRef = useRef<HTMLDivElement>(null);
 
   const room = rooms.find((r) => r.id === selectedRoomId);
 
@@ -136,6 +201,72 @@ export function BookingForm({ rooms, addons }: Props) {
   const subtotal = summary.baseAmount + summary.addonsAmount;
   const total = Math.max(0, subtotal - discount);
 
+  // Debounced live conflict check whenever room/date/slots change
+  useEffect(() => {
+    if (selectedSlots.length === 0 || !selectedRoomId || !date) {
+      setConflicts([]);
+      setConflictChecking(false);
+      return;
+    }
+    const startsAt = computeStartsAtISO(selectedSlots, date);
+    const endsAt = computeEndsAtISO(selectedSlots, date);
+    if (!startsAt || !endsAt) return;
+    setConflictChecking(true);
+    const handle = setTimeout(async () => {
+      try {
+        const results = await checkBookingConflict({
+          roomId: selectedRoomId,
+          startsAt,
+          endsAt,
+        });
+        setConflicts(results);
+      } finally {
+        setConflictChecking(false);
+      }
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [selectedSlots, selectedRoomId, date]);
+
+  // Debounced customer suggestion lookup
+  useEffect(() => {
+    const q = customer.name.trim();
+    if (q.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      const results = await searchCustomers(q);
+      setSuggestions(results);
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [customer.name]);
+
+  // Click-outside to close suggestions
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (
+        customerInputRef.current &&
+        !customerInputRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  function applyCustomerSuggestion(s: (typeof suggestions)[number]) {
+    setCustomer((c) => ({
+      ...c,
+      name: s.display_name,
+      phone: s.phone ?? c.phone,
+      email: s.email ?? c.email,
+      type: (s.type as CType) ?? c.type,
+    }));
+    setShowSuggestions(false);
+    setSuggestions([]);
+  }
+
   function toggleSlot(slot: string) {
     setSelectedSlots((prev) => {
       if (prev.includes(slot)) return prev.filter((s) => s !== slot);
@@ -149,20 +280,11 @@ export function BookingForm({ rooms, addons }: Props) {
   }
 
   function startsAtISO() {
-    if (selectedSlots.length === 0) return "";
-    const [h, m] = selectedSlots[0].split(":").map(Number);
-    const d = new Date(`${date}T00:00:00+07:00`);
-    d.setHours(h, m, 0, 0);
-    return d.toISOString();
+    return computeStartsAtISO(selectedSlots, date);
   }
 
   function endsAtISO() {
-    if (selectedSlots.length === 0) return "";
-    const last = selectedSlots[selectedSlots.length - 1];
-    const [h, m] = last.split(":").map(Number);
-    const d = new Date(`${date}T00:00:00+07:00`);
-    d.setHours(h, m + 30, 0, 0);
-    return d.toISOString();
+    return computeEndsAtISO(selectedSlots, date);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -192,6 +314,15 @@ export function BookingForm({ rooms, addons }: Props) {
       setFeedback({
         kind: "error",
         message: "ส่วนลดมากกว่ายอดรวม",
+      });
+      return;
+    }
+    if (conflicts.length > 0) {
+      setFeedback({
+        kind: "error",
+        message: `เวลานี้ทับซ้อนกับการจอง ${conflicts
+          .map((c) => c.reference_code)
+          .join(", ")} — กรุณาเลือกเวลาอื่น`,
       });
       return;
     }
@@ -262,21 +393,61 @@ export function BookingForm({ rooms, addons }: Props) {
             <CardTitle>ข้อมูลผู้จอง</CardTitle>
           </CardHeader>
           <div className="space-y-4">
-            <div>
+            <div ref={customerInputRef} className="relative">
               <Label>ชื่อบริษัท / ผู้จอง *</Label>
               <Input
                 value={customer.name}
-                onChange={(e) =>
-                  setCustomer((c) => ({ ...c, name: e.target.value }))
-                }
+                onChange={(e) => {
+                  setCustomer((c) => ({ ...c, name: e.target.value }));
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
                 placeholder="พิมพ์ชื่อ..."
                 iconLeft={<Search size={16} />}
                 required
+                autoComplete="off"
               />
               <p className="text-[11px] text-ink-3 mt-1.5 flex items-center gap-1">
                 <Sparkles size={11} strokeWidth={2} className="text-primary-500" />
-                ระบบจะเช็คลูกค้าเก่าด้วย pg_trgm + เบอร์/email ก่อนสร้าง
+                ระบบเช็คลูกค้าเก่าด้วย pg_trgm + เบอร์/email อัตโนมัติ
               </p>
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-[88px] z-30 bg-white border border-line rounded-input shadow-pop max-h-64 overflow-y-auto">
+                  <p className="px-3 py-2 text-[10px] uppercase tracking-[0.08em] text-ink-3 border-b border-line-soft">
+                    ลูกค้าที่ตรงกัน ({suggestions.length})
+                  </p>
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => applyCustomerSuggestion(s)}
+                      className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-primary-50/50 text-left border-b border-line-soft last:border-0 transition"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 grid place-items-center font-semibold text-xs shrink-0">
+                        {s.display_name.slice(0, 1)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium tracking-tight truncate">
+                          {s.display_name}
+                        </p>
+                        <p className="text-[11px] text-ink-3 truncate">
+                          {[s.phone, s.email].filter(Boolean).join(" · ") ||
+                            "—"}
+                        </p>
+                        <p className="text-[10px] text-ink-3 mt-0.5 tabular-nums">
+                          จองแล้ว {s.total_bookings} ครั้ง ·{" "}
+                          {formatBaht(Number(s.total_spent))}
+                        </p>
+                      </div>
+                      {s.tags.length > 0 && (
+                        <Badge tone="primary" className="!text-[10px] shrink-0">
+                          {s.tags[0]}
+                        </Badge>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -433,6 +604,50 @@ export function BookingForm({ rooms, addons }: Props) {
                 selected={selectedSlots}
                 onToggle={toggleSlot}
               />
+
+              {selectedSlots.length > 0 && (
+                <div className="mt-3">
+                  {conflictChecking ? (
+                    <div className="flex items-center gap-2 text-xs text-ink-3 px-3 py-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-ink-3 animate-pulse" />
+                      กำลังตรวจเวลาว่าง...
+                    </div>
+                  ) : conflicts.length > 0 ? (
+                    <div className="rounded-input bg-red-50 border border-red-200 px-3 py-3">
+                      <p className="text-xs font-semibold text-red-700 flex items-center gap-1.5 tracking-tight">
+                        <AlertTriangle size={13} />
+                        เวลานี้ทับซ้อนกับการจอง {conflicts.length} รายการ
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {conflicts.map((c) => (
+                          <li
+                            key={c.id}
+                            className="text-[11px] text-red-700 tabular-nums flex items-center gap-2"
+                          >
+                            <code className="font-mono font-bold">
+                              {c.reference_code}
+                            </code>
+                            <span>
+                              {format(new Date(c.starts_at), "HH:mm")} –{" "}
+                              {format(new Date(c.ends_at), "HH:mm")}
+                            </span>
+                            {c.customer_name && (
+                              <span className="text-red-600 truncate">
+                                · {c.customer_name}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div className="rounded-input bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700 flex items-center gap-1.5 tracking-tight">
+                      <Check size={13} />
+                      เวลานี้ว่าง — พร้อมบันทึก
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </Card>
@@ -661,9 +876,13 @@ export function BookingForm({ rooms, addons }: Props) {
               variant="gradient"
               className="flex-1"
               iconLeft={<Save size={16} />}
-              disabled={pending}
+              disabled={pending || conflicts.length > 0}
             >
-              {pending ? "กำลังบันทึก..." : "บันทึกการจอง"}
+              {pending
+                ? "กำลังบันทึก..."
+                : conflicts.length > 0
+                  ? "เวลาทับซ้อน"
+                  : "บันทึกการจอง"}
             </Button>
           </div>
         </Card>

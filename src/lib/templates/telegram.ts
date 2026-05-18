@@ -134,3 +134,182 @@ export function bookingCancelledTemplate(opts: {
     .filter(Boolean)
     .join("\n");
 }
+
+/* ─── Time-based alerts (A series) ─── */
+
+export function bookingStartingSoonTemplate(opts: {
+  reference: string;
+  customerName: string;
+  roomName: string;
+  startsAt: string;
+  endsAt: string;
+  minutesUntil: number;
+}): string {
+  return [
+    `<b>เริ่มประชุมใน ${opts.minutesUntil} นาที</b>`,
+    "",
+    `รหัส: <code>${escapeHtml(opts.reference)}</code>`,
+    `ผู้จอง: <b>${escapeHtml(opts.customerName)}</b>`,
+    `ห้อง: ${escapeHtml(opts.roomName)}`,
+    `เวลา: ${formatTimeRange(opts.startsAt, opts.endsAt)}`,
+    "─────────────────────",
+    "เตรียมห้อง · เปิดแอร์ · ตรวจ AV · พร้อมต้อนรับ",
+  ].join("\n");
+}
+
+export function bookingEndingSoonTemplate(opts: {
+  reference: string;
+  customerName: string;
+  roomName: string;
+  endsAt: string;
+  minutesUntil: number;
+}): string {
+  return [
+    `<b>ใกล้หมดเวลา (${opts.minutesUntil} นาที)</b>`,
+    "",
+    `รหัส: <code>${escapeHtml(opts.reference)}</code>`,
+    `ผู้จอง: <b>${escapeHtml(opts.customerName)}</b>`,
+    `ห้อง: ${escapeHtml(opts.roomName)}`,
+    `หมด: ${new Date(opts.endsAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`,
+    "─────────────────────",
+    "เตือนผู้ใช้ห้องอย่างสุภาพ · ตรวจการต่อเวลา",
+  ].join("\n");
+}
+
+export function bookingNoShowTemplate(opts: {
+  reference: string;
+  customerName: string;
+  customerPhone?: string;
+  roomName: string;
+  startsAt: string;
+  minutesPast: number;
+}): string {
+  return [
+    `<b>No-show (เกิน ${opts.minutesPast} นาที)</b>`,
+    "",
+    `รหัส: <code>${escapeHtml(opts.reference)}</code>`,
+    `ผู้จอง: <b>${escapeHtml(opts.customerName)}</b>`,
+    opts.customerPhone ? `เบอร์: ${escapeHtml(opts.customerPhone)}` : "",
+    `ห้อง: ${escapeHtml(opts.roomName)}`,
+    `เริ่มที่: ${new Date(opts.startsAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}`,
+    "─────────────────────",
+    "โทรเช็คก่อนทำเครื่องหมาย no-show · พิจารณายึดมัดจำ",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/* ─── Finance (B series) ─── */
+
+export function outstandingAlertTemplate(opts: {
+  reference: string;
+  customerName: string;
+  amountOutstanding: number;
+  daysOverdue: number;
+  dueAt: string;
+}): string {
+  const tone =
+    opts.daysOverdue > 7 ? "เกินกำหนดมาก" : opts.daysOverdue > 0 ? "เกินกำหนด" : "ใกล้ครบกำหนด";
+  return [
+    `<b>${tone}: ${formatBaht(opts.amountOutstanding)}</b>`,
+    "",
+    `รหัส: <code>${escapeHtml(opts.reference)}</code>`,
+    `ลูกค้า: <b>${escapeHtml(opts.customerName)}</b>`,
+    `กำหนดชำระ: ${formatDate(opts.dueAt)}`,
+    opts.daysOverdue > 0 ? `เกินมา: ${opts.daysOverdue} วัน` : "",
+    "─────────────────────",
+    "โทรติดตาม · ส่ง LINE follow-up",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function paymentDueSoonTemplate(opts: {
+  reference: string;
+  customerName: string;
+  amountOutstanding: number;
+  dueAt: string;
+}): string {
+  return [
+    `<b>ใกล้ครบกำหนดชำระ</b>`,
+    "",
+    `รหัส: <code>${escapeHtml(opts.reference)}</code>`,
+    `ลูกค้า: <b>${escapeHtml(opts.customerName)}</b>`,
+    `ยอดคงค้าง: ${formatBaht(opts.amountOutstanding)}`,
+    `กำหนด: ${formatDate(opts.dueAt)}`,
+    "─────────────────────",
+    "ส่ง LINE สุภาพเตือนล่วงหน้า",
+  ].join("\n");
+}
+
+/* ─── AI digest (C series) ─── */
+
+export function dailyDigestTemplate(opts: {
+  bookingsToday: number;
+  revenuePaid: number;
+  revenueTotal: number;
+  outstandingCount: number;
+  outstandingAmount: number;
+  utilization: number;
+  highlights: string[];
+  alerts: string[];
+  recommendations: string[];
+}): string {
+  const today = new Date().toLocaleDateString("th-TH", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  return [
+    "<b>AI Daily Brief — สรุปปลายวัน</b>",
+    today,
+    "",
+    "<b>ตัวเลขสำคัญ</b>",
+    `· การจอง ${opts.bookingsToday} รายการ`,
+    `· รายได้รับจริง ${formatBaht(opts.revenuePaid)} / ยอดรวม ${formatBaht(opts.revenueTotal)}`,
+    `· Utilization ${opts.utilization}%`,
+    `· ค้างชำระ ${opts.outstandingCount} ราย รวม ${formatBaht(opts.outstandingAmount)}`,
+    "─────────────────────",
+    "<b>Highlights</b>",
+    ...opts.highlights.map((h) => `· ${escapeHtml(h)}`),
+    "",
+    "<b>Alerts</b>",
+    ...(opts.alerts.length > 0
+      ? opts.alerts.map((a) => `· ${escapeHtml(a)}`)
+      : ["· ไม่มีรายการต้องระวัง"]),
+    "",
+    "<b>Recommendations</b>",
+    ...opts.recommendations.map((r) => `· ${escapeHtml(r)}`),
+  ].join("\n");
+}
+
+/* ─── Internal users (D series) ─── */
+
+export function memberJoinedTemplate(opts: {
+  memberName: string;
+  orgName: string;
+  email: string;
+}): string {
+  return [
+    "<b>สมาชิกใหม่เข้าระบบ</b>",
+    "",
+    `ชื่อ: <b>${escapeHtml(opts.memberName)}</b>`,
+    `องค์กร: ${escapeHtml(opts.orgName)}`,
+    `Email: ${escapeHtml(opts.email)}`,
+  ].join("\n");
+}
+
+export function quotaAlertTemplate(opts: {
+  orgName: string;
+  used: number;
+  total: number;
+  percentage: number;
+}): string {
+  return [
+    `<b>Quota ใช้ใกล้หมด · ${opts.orgName}</b>`,
+    "",
+    `ใช้แล้ว: ${opts.used}/${opts.total} ชม. (${opts.percentage}%)`,
+    "─────────────────────",
+    "พิจารณา top-up หรือเตือนผู้จัดการองค์กร",
+  ].join("\n");
+}
