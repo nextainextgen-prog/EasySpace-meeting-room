@@ -74,6 +74,26 @@ export async function GET(request: Request) {
       events.push({ id: b.id, alert: alertKey });
     }
 
+    // A1: 30 min before start (fire within [16, 30])
+    if (
+      minutesToStart >= 16 &&
+      minutesToStart <= 30 &&
+      !sent.includes("starting_30")
+    ) {
+      void dispatchEvent(
+        "notification.time_alert",
+        bookingStartingSoonTemplate({
+          reference: b.reference_code,
+          customerName: b.customer?.display_name ?? "—",
+          roomName: b.room?.name ?? "—",
+          startsAt: b.starts_at,
+          endsAt: b.ends_at,
+          minutesUntil: Math.max(0, minutesToStart),
+        }),
+      );
+      await markSent("starting_30");
+    }
+
     // A2: 15 min before start (fire within [-2, 15])
     if (
       minutesToStart >= -2 &&
@@ -94,7 +114,26 @@ export async function GET(request: Request) {
       await markSent("starting_15");
     }
 
-    // A3: 5 min before end
+    // A3: 15 min before end (fire within [6, 15])
+    if (
+      minutesToEnd >= 6 &&
+      minutesToEnd <= 15 &&
+      !sent.includes("ending_15")
+    ) {
+      void dispatchEvent(
+        "notification.time_alert",
+        bookingEndingSoonTemplate({
+          reference: b.reference_code,
+          customerName: b.customer?.display_name ?? "—",
+          roomName: b.room?.name ?? "—",
+          endsAt: b.ends_at,
+          minutesUntil: minutesToEnd,
+        }),
+      );
+      await markSent("ending_15");
+    }
+
+    // A4: 5 min before end
     if (
       minutesToEnd >= 0 &&
       minutesToEnd <= 5 &&

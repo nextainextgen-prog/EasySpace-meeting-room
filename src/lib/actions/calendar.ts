@@ -86,7 +86,21 @@ export async function moveBooking(raw: z.infer<typeof MoveSchema>) {
     },
   } as never);
 
+  // Clear alerts_sent so time-alerts cron re-evaluates against the new time
+  await supabase
+    .from("bookings")
+    .update({ metadata: { alerts_sent: [] } as never } as never)
+    .eq("id", input.bookingId);
+
+  // Auto-resolve stale in-app notifications tied to this booking
+  await supabase
+    .from("notifications")
+    .update({ resolved_at: new Date().toISOString() } as never)
+    .eq("related_id", input.bookingId)
+    .is("resolved_at", null);
+
   revalidatePath("/admin/calendar");
+  revalidatePath("/admin/notifications");
   return { ok: true as const };
 }
 
