@@ -334,9 +334,9 @@ export function AuditLogBoard({ rows }: { rows: Row[] }) {
 
 function DetailModal({ row, onClose }: { row: Row; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 p-4">
-      <div className="w-full max-w-2xl surface-card !p-0 overflow-hidden">
-        <div className="p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-2xl surface-card !p-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
+        <div className="shrink-0 p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
           <div>
             <p className="font-bold tracking-tight">
               <code className="font-mono text-primary-700">{row.action}</code>
@@ -345,11 +345,14 @@ function DetailModal({ row, onClose }: { row: Row; onClose: () => void }) {
               {formatThaiDateTime(row.created_at)}
             </p>
           </div>
-          <button onClick={onClose}>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
             <X size={16} />
           </button>
         </div>
-        <div className="p-5 space-y-3 text-sm max-h-[60vh] overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-5 space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-3">
             <Info label="Actor" value={row.actor_name ?? "system"} />
             <Info label="Role" value={row.actor_role ?? "—"} />

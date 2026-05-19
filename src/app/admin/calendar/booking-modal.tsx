@@ -89,7 +89,7 @@ export function BookingModal({ bookingId, onClose, onSaved }: Props) {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
         <div className="w-full max-w-3xl surface-card !p-6 flex items-center gap-3">
           <span className="inline-block w-4 h-4 rounded-pill border-2 border-primary-200 border-t-primary-600 animate-spin" />
           <p className="text-sm text-ink-2">กำลังโหลดข้อมูลการจอง...</p>
@@ -106,7 +106,7 @@ export function BookingModal({ bookingId, onClose, onSaved }: Props) {
 
   if (loadError || !detail || !detail.booking) {
     return (
-      <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
         <div className="w-full max-w-md surface-card !p-6">
           <p className="text-sm font-semibold tracking-tight mb-1">
             เปิดข้อมูลการจองไม่สำเร็จ
@@ -145,15 +145,17 @@ export function BookingModal({ bookingId, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 backdrop-blur-sm p-4 overflow-y-auto print:p-0 print:bg-white">
-      <div className="w-full max-w-3xl surface-card !p-0 overflow-hidden my-4">
-        <Header
-          detail={detail}
-          lockStatus={lockStatus}
-          onClose={onClose}
-        />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4 print:p-0 print:bg-white">
+      <div className="w-full max-w-3xl surface-card !p-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
+        <div className="shrink-0">
+          <Header
+            detail={detail}
+            lockStatus={lockStatus}
+            onClose={onClose}
+          />
+        </div>
 
-        <div className="px-5 border-b border-line bg-surface-subtle/30 flex gap-1 print:hidden">
+        <div className="shrink-0 px-5 border-b border-line bg-surface-subtle/30 flex gap-1 print:hidden">
           {(
             [
               ["info", "ข้อมูล", FileText],
@@ -178,7 +180,7 @@ export function BookingModal({ bookingId, onClose, onSaved }: Props) {
           ))}
         </div>
 
-        <div className="p-5 max-h-[60vh] overflow-y-auto">
+        <div className="flex-1 overflow-y-auto p-5">
           {tab === "info" && (
             <InfoTab
               detail={detail}
@@ -221,15 +223,17 @@ export function BookingModal({ bookingId, onClose, onSaved }: Props) {
           {tab === "files" && <FilesTab detail={detail} />}
         </div>
 
-        <Footer
-          detail={detail}
-          readonly={lockStatus.kind === "locked"}
-          onClose={onClose}
-          onCancelled={() => {
-            onSaved?.({ id: bookingId, booking_status: "cancelled" });
-            onClose();
-          }}
-        />
+        <div className="shrink-0">
+          <Footer
+            detail={detail}
+            readonly={lockStatus.kind === "locked"}
+            onClose={onClose}
+            onCancelled={() => {
+              onSaved?.({ id: bookingId, booking_status: "cancelled" });
+              onClose();
+            }}
+          />
+        </div>
       </div>
     </div>
   );

@@ -878,24 +878,28 @@ function ExpenseFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
       <form
         onSubmit={submit}
-        className="w-full max-w-xl surface-card !p-0 overflow-hidden"
+        className="w-full max-w-xl surface-card !p-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden"
       >
-        <div className="p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
+        <div className="shrink-0 p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
           <div>
             <p className="font-bold tracking-tight">บันทึกรายจ่ายใหม่</p>
             <p className="text-xs text-ink-3 mt-0.5">
               AI จะแนะนำหมวดอัตโนมัติเมื่อพิมพ์รายละเอียด
             </p>
           </div>
-          <button type="button" onClick={onClose}>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
             <X size={16} />
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>วันที่</Label>
@@ -1009,7 +1013,7 @@ function ExpenseFormModal({
           {err && <p className="text-xs text-red-600">{err}</p>}
         </div>
 
-        <div className="px-5 py-4 bg-surface-subtle border-t border-line-soft flex justify-end gap-2">
+        <div className="shrink-0 px-5 py-4 bg-surface-subtle border-t border-line-soft flex justify-end gap-2">
           <Button
             type="button"
             variant="secondary"
@@ -1282,8 +1286,8 @@ function OutstandingTab({
       </Card>
 
       {marking && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 p-4">
-          <div className="w-full max-w-md surface-card">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
             <p className="font-bold tracking-tight">ทำเครื่องหมายเป็นหนี้สูญ</p>
             <p className="text-xs text-ink-3 mt-0.5 mb-4">
               ระบบจะตั้งเป็น free + เก็บเหตุผลไว้ใน audit log

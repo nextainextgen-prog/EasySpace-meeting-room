@@ -1802,9 +1802,9 @@ function FuzzyMatchModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md surface-card !p-0 overflow-hidden">
-        <div className="p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start gap-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md surface-card !p-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
+        <div className="shrink-0 p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start gap-3">
           <span className="w-9 h-9 rounded-full bg-primary-100 text-primary-700 grid place-items-center shrink-0">
             <Sparkles size={16} />
           </span>
@@ -1821,13 +1821,13 @@ function FuzzyMatchModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-ink-3 hover:text-ink-1"
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="p-5 space-y-3">
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
           <div className="rounded-input border border-line bg-white p-3 flex items-start gap-3">
             <Building2
               size={18}

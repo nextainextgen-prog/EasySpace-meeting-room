@@ -597,12 +597,12 @@ function AdminFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
       <form
         onSubmit={save}
-        className="w-full max-w-xl surface-card !p-0 overflow-hidden my-4"
+        className="w-full max-w-xl surface-card !p-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden"
       >
-        <div className="p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
+        <div className="shrink-0 p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
           <div>
             <p className="font-bold tracking-tight">
               {mode === "invite" ? "เพิ่มแอดมินใหม่" : "แก้ไขแอดมิน"}
@@ -613,12 +613,16 @@ function AdminFormModal({
                 : "อัปเดตข้อมูล + permission override"}
             </p>
           </div>
-          <button type="button" onClick={onClose}>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
             <X size={16} />
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Email *</Label>
@@ -761,7 +765,7 @@ function AdminFormModal({
           )}
         </div>
 
-        <div className="px-5 py-4 bg-surface-subtle border-t border-line-soft flex justify-end gap-2">
+        <div className="shrink-0 px-5 py-4 bg-surface-subtle border-t border-line-soft flex justify-end gap-2">
           <Button type="button" variant="secondary" size="sm" onClick={onClose}>
             ปิด
           </Button>
@@ -1122,12 +1126,12 @@ function OrgFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
       <form
         onSubmit={save}
-        className="w-full max-w-2xl surface-card !p-0 overflow-hidden my-4"
+        className="w-full max-w-2xl surface-card !p-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden"
       >
-        <div className="p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
+        <div className="shrink-0 p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
           <div>
             <p className="font-bold tracking-tight text-lg">
               {mode === "create" ? "เพิ่มองค์กรใหม่" : "แก้ไของค์กร"}
@@ -1136,12 +1140,16 @@ function OrgFormModal({
               Logo · brand · contract · email domain · plan tier
             </p>
           </div>
-          <button type="button" onClick={onClose}>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
             <X size={16} />
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>ชื่อองค์กร *</Label>
@@ -1345,7 +1353,7 @@ function OrgFormModal({
           )}
         </div>
 
-        <div className="px-5 py-4 bg-surface-subtle border-t border-line-soft flex justify-end gap-2">
+        <div className="shrink-0 px-5 py-4 bg-surface-subtle border-t border-line-soft flex justify-end gap-2">
           <Button type="button" variant="secondary" size="sm" onClick={onClose}>
             ปิด
           </Button>
@@ -1384,8 +1392,8 @@ function BroadcastModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 p-4">
-      <div className="w-full max-w-md surface-card">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="flex items-start justify-between mb-3">
           <div>
             <p className="font-bold tracking-tight">
@@ -1395,7 +1403,10 @@ function BroadcastModal({
               ส่งให้ {org.member_count} สมาชิก (ผ่าน Telegram &quot;ติดตามสถานะ&quot;)
             </p>
           </div>
-          <button onClick={onClose}>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
             <X size={16} />
           </button>
         </div>
@@ -1456,8 +1467,8 @@ function BulkImportModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 p-4">
-      <div className="w-full max-w-lg surface-card">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="flex items-start justify-between mb-3">
           <div>
             <p className="font-bold tracking-tight">
@@ -1467,7 +1478,10 @@ function BulkImportModal({
               CSV: email, full_name, phone, tier
             </p>
           </div>
-          <button onClick={onClose}>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
             <X size={16} />
           </button>
         </div>
@@ -1703,9 +1717,9 @@ function AuditDetailModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 p-4">
-      <div className="w-full max-w-xl surface-card !p-0 overflow-hidden">
-        <div className="p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-xl surface-card !p-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
+        <div className="shrink-0 p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
           <div>
             <p className="font-bold tracking-tight">
               <code className="font-mono text-primary-700">
@@ -1716,11 +1730,14 @@ function AuditDetailModal({
               {new Date(entry.created_at).toLocaleString("th-TH")}
             </p>
           </div>
-          <button onClick={onClose}>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
             <X size={16} />
           </button>
         </div>
-        <div className="p-5 space-y-3 text-sm">
+        <div className="flex-1 overflow-y-auto p-5 space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-3">
             <Info label="Actor" value={entry.actor_name ?? "system"} />
             <Info label="Role" value={entry.actor_role ?? "—"} />

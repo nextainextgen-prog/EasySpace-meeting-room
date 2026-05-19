@@ -2201,14 +2201,17 @@ function BulkPromptModal({
 }) {
   const [value, setValue] = useState("");
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 p-4">
-      <div className="w-full max-w-md surface-card">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="flex items-start justify-between mb-3">
           <div>
             <p className="font-bold tracking-tight">{title}</p>
             <p className="text-xs text-ink-3 mt-0.5">{subtitle}</p>
           </div>
-          <button onClick={onClose}>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
             <X size={16} />
           </button>
         </div>
@@ -2253,14 +2256,17 @@ function BulkConfirmModal({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 p-4">
-      <div className="w-full max-w-md surface-card">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="flex items-start justify-between mb-3">
           <div>
             <p className="font-bold tracking-tight">{title}</p>
             <p className="text-xs text-ink-3 mt-0.5">{subtitle}</p>
           </div>
-          <button onClick={onClose}>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
             <X size={16} />
           </button>
         </div>
@@ -2293,9 +2299,9 @@ function ConflictModal({
   onPick: (s: { startsAt: string; endsAt: string }) => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 p-4">
-      <div className="w-full max-w-md surface-card !p-0 overflow-hidden">
-        <div className="p-5 bg-gradient-to-br from-amber-50 to-white border-b border-line-soft flex items-start gap-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md surface-card !p-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
+        <div className="shrink-0 p-5 bg-gradient-to-br from-amber-50 to-white border-b border-line-soft flex items-start gap-3">
           <span className="w-9 h-9 rounded-full bg-amber-100 text-amber-700 grid place-items-center shrink-0">
             <AlertTriangle size={16} />
           </span>
@@ -2307,11 +2313,14 @@ function ConflictModal({
               AI แนะนำช่วงเวลาว่างถัดไปที่ใกล้เคียงที่สุด
             </p>
           </div>
-          <button onClick={onClose}>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
             <X size={16} />
           </button>
         </div>
-        <div className="p-5 space-y-2">
+        <div className="flex-1 overflow-y-auto p-5 space-y-2">
           {suggestions.length === 0 ? (
             <p className="text-sm text-ink-3 text-center py-4">
               ไม่มีช่วงเวลาว่างในวันนี้

@@ -243,8 +243,8 @@ export function PromotionWizard({ open, onClose, rooms, suggestion }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm grid place-items-center p-4">
-      <div className="bg-white rounded-card shadow-card-hover w-full max-w-3xl max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-card shadow-card-hover w-full max-w-3xl max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-start justify-between p-6 border-b border-line-soft">
           <div className="flex items-center gap-3">
