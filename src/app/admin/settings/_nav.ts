@@ -22,6 +22,7 @@ import {
   Database,
   Archive,
   Activity,
+  QrCode,
   type LucideIcon,
 } from "lucide-react";
 
@@ -76,6 +77,12 @@ export const SETTINGS_GROUPS: Group[] = [
         icon: Receipt,
         title: "นโยบายการจอง",
         desc: "มัดจำ · ยกเลิก · no-show",
+      },
+      {
+        href: "/admin/settings/qr-public",
+        icon: QrCode,
+        title: "QR หน้าห้อง (Public)",
+        desc: "/rooms/* · ลิงก์ LINE · QR download",
       },
     ],
   },
