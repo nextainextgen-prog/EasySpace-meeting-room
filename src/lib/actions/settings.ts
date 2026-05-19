@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { getCurrentProfile } from "@/lib/auth";
+import { recordAudit } from "./audit";
 
 /** Read a single settings KV row (jsonb value). */
 export async function getSettingValue<T = unknown>(
@@ -36,6 +37,12 @@ export async function setSettingValue(
     { onConflict: "key" },
   );
   if (error) return { ok: false as const, error: error.message };
+  await recordAudit({
+    action: "settings_changed",
+    targetType: "setting",
+    targetId: key,
+    changes: { key, category: category ?? null },
+  });
   revalidatePath("/admin/settings", "layout");
   return { ok: true as const };
 }

@@ -9,6 +9,7 @@ import {
   findCustomerCandidates,
 } from "@/lib/data";
 import { dispatchEvent } from "@/lib/server/notifications";
+import { recordAudit } from "./audit";
 import {
   bookingCreatedTemplate,
   paymentRecordedTemplate,
@@ -458,6 +459,19 @@ export async function createBooking(raw: CreateBookingInput) {
     }
   }
 
+  await recordAudit({
+    action: "booking_created",
+    targetType: "booking",
+    targetId: bookingId,
+    changes: {
+      reference,
+      roomId: input.booking.roomId,
+      startsAt: input.booking.startsAt,
+      endsAt: input.booking.endsAt,
+      total: input.booking.totalAmount,
+    },
+  });
+
   revalidatePath("/admin/calendar");
   revalidatePath("/admin/bookings");
   revalidatePath("/admin/dashboard");
@@ -521,6 +535,13 @@ export async function cancelBooking(input: {
       reason: input.reason,
     }),
   );
+
+  await recordAudit({
+    action: "booking_cancelled",
+    targetType: "booking",
+    targetId: input.bookingId,
+    reason: input.reason,
+  });
 
   revalidatePath("/admin/calendar");
   revalidatePath("/admin/bookings");
