@@ -16,6 +16,7 @@ import {
   bookingCancelledTemplate,
 } from "@/lib/templates/telegram";
 import { generateBookingCode } from "@/lib/data/bookings";
+import { sendEmail, meetingInviteEmail } from "@/lib/email";
 
 // ─── Register member through invite link ───────────────────────────────────
 const RegisterSchema = z.object({
@@ -24,6 +25,7 @@ const RegisterSchema = z.object({
   email: z.string().email(),
   phone: z.string().optional(),
   position: z.string().optional(),
+  department: z.string().optional(),
 });
 
 export type RegisterMemberInput = z.infer<typeof RegisterSchema>;
@@ -53,24 +55,64 @@ export async function registerMember(raw: RegisterMemberInput) {
 
   const admin = createSupabaseAdminClient();
   const user = await getCurrentUser();
+  const emailLc = input.email.toLowerCase();
 
-  // Find or create member by email
-  const { data: existing } = await admin
-    .from("members")
-    .select("id, profile_id")
-    .eq("email", input.email.toLowerCase())
-    .maybeSingle();
+  // 1. If signed in, prefer the member already tied to this profile — there
+  //    is a UNIQUE (profile_id) constraint, so we must reuse that row rather
+  //    than insert a fresh one keyed on email.
+  // 2. Otherwise look up by email.
+  type ExistingMember = {
+    id: string;
+    profile_id: string | null;
+    email: string;
+  };
+  let existing: ExistingMember | null = null;
+
+  if (user?.id) {
+    const { data } = await admin
+      .from("members")
+      .select("id, profile_id, email")
+      .eq("profile_id", user.id)
+      .maybeSingle();
+    existing = (data as ExistingMember | null) ?? null;
+  }
+  if (!existing) {
+    const { data } = await admin
+      .from("members")
+      .select("id, profile_id, email")
+      .eq("email", emailLc)
+      .maybeSingle();
+    existing = (data as ExistingMember | null) ?? null;
+  }
+
+  // Only attach this auth user as the profile owner if no other member row
+  // already claims it — prevents the duplicate-key crash.
+  let profileIdToSet: string | null =
+    existing?.profile_id ?? user?.id ?? null;
+  if (user?.id && existing && existing.profile_id && existing.profile_id !== user.id) {
+    // Different account already claims this member row — leave profile_id alone.
+    profileIdToSet = existing.profile_id;
+  } else if (user?.id && !existing) {
+    // Inserting fresh; double-check that no other row uses this profile_id.
+    const { data: claimed } = await admin
+      .from("members")
+      .select("id")
+      .eq("profile_id", user.id)
+      .maybeSingle();
+    if (claimed) profileIdToSet = null;
+  }
 
   let memberId: string;
   if (existing) {
-    memberId = (existing as { id: string }).id;
+    memberId = existing.id;
     await admin
       .from("members")
       .update({
         full_name: input.fullName,
+        email: emailLc,
         phone: input.phone ?? null,
         position: input.position ?? null,
-        profile_id: user?.id ?? (existing as { profile_id: string | null }).profile_id ?? null,
+        profile_id: profileIdToSet,
         is_active: true,
       } as never)
       .eq("id", memberId);
@@ -78,8 +120,8 @@ export async function registerMember(raw: RegisterMemberInput) {
     const { data, error } = await admin
       .from("members")
       .insert({
-        profile_id: user?.id ?? null,
-        email: input.email.toLowerCase(),
+        profile_id: profileIdToSet,
+        email: emailLc,
         full_name: input.fullName,
         phone: input.phone ?? null,
         position: input.position ?? null,
@@ -91,6 +133,31 @@ export async function registerMember(raw: RegisterMemberInput) {
     memberId = (data as { id: string }).id;
   }
 
+  // Upsert department by name (per-org). Empty/missing → no department.
+  let departmentId: string | null = null;
+  if (input.department?.trim()) {
+    const depName = input.department.trim();
+    const { data: existingDept } = await admin
+      .from("departments")
+      .select("id")
+      .eq("org_id", invite.organization.id)
+      .ilike("name", depName)
+      .maybeSingle();
+    if (existingDept) {
+      departmentId = (existingDept as { id: string }).id;
+    } else {
+      const { data: newDept } = await admin
+        .from("departments")
+        .insert({
+          org_id: invite.organization.id,
+          name: depName,
+        } as never)
+        .select("id")
+        .single();
+      departmentId = (newDept as { id: string } | null)?.id ?? null;
+    }
+  }
+
   // Link to org (upsert idempotent)
   await admin
     .from("member_organizations")
@@ -98,6 +165,7 @@ export async function registerMember(raw: RegisterMemberInput) {
       {
         member_id: memberId,
         org_id: invite.organization.id,
+        department_id: departmentId,
         tier: "member",
         is_active: true,
         joined_at: new Date().toISOString(),
@@ -135,6 +203,7 @@ const MemberBookingSchema = z.object({
   agenda: z.string().optional(),
   isPublic: z.boolean().default(true),
   notes: z.string().optional(),
+  attendeeEmails: z.array(z.string().email()).default([]),
 });
 
 export type MemberBookingInput = z.infer<typeof MemberBookingSchema>;
@@ -195,6 +264,9 @@ export async function createMemberBooking(
       internal_agenda: input.agenda ?? null,
       is_public: input.isPublic,
       notes: input.notes ?? null,
+      metadata: {
+        attendee_emails: input.attendeeEmails,
+      },
     } as never)
     .select("id, reference_code")
     .single();
@@ -209,14 +281,18 @@ export async function createMemberBooking(
     changes: { source: "member_portal", input },
   } as never);
 
-  // Telegram notify (booking.created topic 2)
+  // Telegram + Email notify
   const [{ data: roomRow }, { data: memberRow }, { data: orgRow }] = await Promise.all([
     admin.from("rooms").select("name, capacity_max").eq("id", input.roomId).single(),
-    admin.from("members").select("full_name").eq("id", ctx.memberId).single(),
+    admin
+      .from("members")
+      .select("full_name, email")
+      .eq("id", ctx.memberId)
+      .single(),
     admin.from("organizations").select("name").eq("id", ctx.orgId).single(),
   ]);
   const room = roomRow as { name: string; capacity_max: number | null } | null;
-  const member = memberRow as { full_name: string } | null;
+  const member = memberRow as { full_name: string; email: string } | null;
   const org = orgRow as { name: string } | null;
 
   if (room && member) {
@@ -235,6 +311,63 @@ export async function createMemberBooking(
       isReturningCustomer: false,
     });
     void dispatchEvent("booking.created", text);
+
+    // Email — organizer (confirmation) + each attendee (invitation). Fire and
+    // forget; never block the booking response on the mail provider.
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL ??
+      "https://easy-space-meeting-room-yjqk.vercel.app";
+    const emailParams = {
+      title: input.title,
+      organizerName: member.full_name,
+      organizerEmail: member.email,
+      orgName: org?.name ?? null,
+      roomName: room.name,
+      roomCapacity: room.capacity_max,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      attendees: input.attendees ?? null,
+      agenda: input.agenda ?? null,
+      notes: input.notes ?? null,
+      attendeeEmails: input.attendeeEmails,
+      reference,
+      appUrl,
+      bookingId,
+    };
+
+    void (async () => {
+      try {
+        const organizerMsg = meetingInviteEmail(emailParams, "organizer");
+        await sendEmail({
+          to: member.email,
+          subject: organizerMsg.subject,
+          html: organizerMsg.html,
+          text: organizerMsg.text,
+          replyTo: member.email,
+        });
+      } catch (e) {
+        console.error("[email] organizer notify failed:", e);
+      }
+    })();
+
+    for (const attendee of input.attendeeEmails) {
+      // Skip if the attendee email is the organizer themselves.
+      if (attendee.toLowerCase() === member.email.toLowerCase()) continue;
+      void (async () => {
+        try {
+          const inviteMsg = meetingInviteEmail(emailParams, "attendee");
+          await sendEmail({
+            to: attendee,
+            subject: inviteMsg.subject,
+            html: inviteMsg.html,
+            text: inviteMsg.text,
+            replyTo: member.email,
+          });
+        } catch (e) {
+          console.error(`[email] attendee notify failed (${attendee}):`, e);
+        }
+      })();
+    }
   }
 
   revalidatePath("/app");

@@ -35,13 +35,22 @@ export const getCurrentProfile = cache(
     if (!user) return null;
 
     const admin = createSupabaseAdminClient();
-    const { data } = await admin
+    const { data, error } = await admin
       .from("profiles")
       .select(
         "id, email, full_name, phone, avatar_url, role, is_active, two_factor_enabled, last_login_at",
       )
       .eq("id", user.id)
       .maybeSingle();
+
+    if (error) {
+      // The admin (service_role) call failed — almost always means
+      // SUPABASE_SERVICE_ROLE_KEY in the deployed env is wrong or missing.
+      // Surface the real cause instead of silently downgrading to "viewer",
+      // which causes a /admin ↔ /login?error=forbidden redirect loop.
+      console.error("[auth] profiles SELECT failed:", error.message, error);
+      throw new Error(`Supabase admin query failed: ${error.message}`);
+    }
 
     if (!data) {
       // Auto-provision: first time the user signs in, bootstrap a profile row

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Calendar } from "lucide-react";
 import { LoginForm } from "./login-form";
 import { getCurrentUser } from "@/lib/auth";
+import { createSupabaseServerClient } from "@/lib/integrations/supabase/server";
 
 export const metadata = {
   title: "เข้าสู่ระบบ — EasySpace",
@@ -30,7 +31,16 @@ export default async function LoginPage({
   const params = await searchParams;
   const user = await getCurrentUser();
   if (user) {
-    redirect(params.next ?? "/admin/dashboard");
+    // If we arrived here with ?error=..., it means a protected layout actively
+    // bounced us out (e.g. role check failed). Auto-redirecting back to /admin
+    // would just re-trigger the same bounce → infinite loop. Sign out instead
+    // so the form is usable and the user can try a different account.
+    if (params.error) {
+      const supabase = await createSupabaseServerClient();
+      await supabase.auth.signOut();
+    } else {
+      redirect(params.next ?? "/admin/dashboard");
+    }
   }
   const errorMessage = params.error ? ERROR_MESSAGES[params.error] : null;
   const noticeMessage = params.notice ? NOTICE_MESSAGES[params.notice] : null;
@@ -49,16 +59,10 @@ export default async function LoginPage({
 
         <div className="rounded-[28px] bg-white px-8 py-10 sm:px-10 sm:py-11 shadow-[0_30px_80px_-20px_rgba(15,23,42,0.35)]">
           <h1 className="text-4xl font-bold tracking-tighter text-primary-600">
-            เข้าสู่ระบบ
+            เข้าสู่ระบบหลังบ้าน
           </h1>
           <p className="mt-2 text-sm text-ink-3">
-            ยังไม่มีบัญชี?{" "}
-            <Link
-              href="/contact-admin"
-              className="text-primary-600 font-semibold hover:underline"
-            >
-              ติดต่อแอดมินตึก
-            </Link>
+            สำหรับแอดมิน / เจ้าหน้าที่ตึก — เข้าด้วย Email + รหัสผ่าน
           </p>
 
           {errorMessage && (

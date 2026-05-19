@@ -15,7 +15,7 @@ const DISCOUNT_TYPES: PromotionDiscountType[] = [
   "voucher",
 ];
 
-export const promotionInput = z.object({
+const promotionInput = z.object({
   name: z.string().trim().min(1, "ตั้งชื่อโปรโมชั่น"),
   description: z.string().trim().optional().nullable(),
   code: z.string().trim().optional().nullable(),

@@ -17,7 +17,10 @@ import { IconTile } from "@/components/ui/icon-tile";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { HeroCard } from "@/components/ui/hero-card";
 import { requireAuth } from "@/lib/auth";
+import { getCurrentMember } from "@/lib/data/members";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
+
+export const dynamic = "force-dynamic";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 
@@ -33,30 +36,58 @@ interface UpcomingBooking {
 
 export default async function MemberDashboard() {
   const profile = await requireAuth();
+  const ctx = await getCurrentMember();
   const supabase = createSupabaseAdminClient();
 
-  // upcoming bookings for this member
+  // bookings.member_id points at members.id (NOT auth.profile.id), so look
+  // up the member row before filtering.
+  const memberId = ctx?.member.id ?? null;
+
   const now = new Date().toISOString();
-  const { data: upcomingRaw } = await supabase
-    .from("bookings")
-    .select(
-      "id, starts_at, ends_at, attendees_count, booking_status, internal_title, room:rooms(name)",
-    )
-    .gte("starts_at", now)
-    .or(`member_id.eq.${profile.id},created_by.eq.${profile.id}`)
-    .order("starts_at")
-    .limit(3);
+  const { data: upcomingRaw } = memberId
+    ? await supabase
+        .from("bookings")
+        .select(
+          "id, starts_at, ends_at, attendees_count, booking_status, internal_title, room:rooms(name)",
+        )
+        // "Upcoming" = anything not yet ended. Using starts_at would hide
+        // bookings that already began today, which was the original bug.
+        .gte("ends_at", now)
+        .neq("booking_status", "cancelled")
+        .eq("member_id", memberId)
+        .order("starts_at")
+        .limit(5)
+    : { data: [] };
   const upcoming = (upcomingRaw ?? []) as unknown as UpcomingBooking[];
+
+  // "This week" — bookings starting in the current ISO week, capped at 50.
+  const weekStart = new Date(now);
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 7);
+  const { count: weekCount } = memberId
+    ? await supabase
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("member_id", memberId)
+        .neq("booking_status", "cancelled")
+        .gte("starts_at", weekStart.toISOString())
+        .lt("starts_at", weekEnd.toISOString())
+    : { count: 0 };
 
   // member quota lookup (Phase 1 simplification — flat 40 hrs)
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
-  const { data: monthBookings } = await supabase
-    .from("bookings")
-    .select("starts_at, ends_at")
-    .or(`member_id.eq.${profile.id},created_by.eq.${profile.id}`)
-    .gte("starts_at", monthStart.toISOString());
+  const { data: monthBookings } = memberId
+    ? await supabase
+        .from("bookings")
+        .select("starts_at, ends_at")
+        .eq("member_id", memberId)
+        .neq("booking_status", "cancelled")
+        .gte("starts_at", monthStart.toISOString())
+    : { data: [] };
   const hoursUsed = (
     (monthBookings ?? []) as Array<{ starts_at: string; ends_at: string }>
   ).reduce((sum, b) => {
@@ -97,7 +128,11 @@ export default async function MemberDashboard() {
           }
           icon={Calendar}
         />
-        <KpiCard label="สัปดาห์นี้" value={`${upcoming.length} รายการ`} icon={Sparkles} />
+        <KpiCard
+          label="สัปดาห์นี้"
+          value={`${weekCount ?? 0} รายการ`}
+          icon={Sparkles}
+        />
         <KpiCard label="ทีม" value="—" icon={Users} />
       </div>
 
