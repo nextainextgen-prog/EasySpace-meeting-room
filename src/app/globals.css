@@ -151,3 +151,47 @@
   background-size: 1000px 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
+
+/* Inline keyboard hint */
+.kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  color: var(--ink-2);
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+/* Print-friendly: hide chrome, expand calendar */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+  body {
+    background: #fff;
+  }
+  aside,
+  nav,
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+  .surface-card,
+  .shadow-card,
+  .shadow-card-hover,
+  .shadow-hero,
+  .shadow-pop {
+    box-shadow: none !important;
+    border: 1px solid var(--line) !important;
+  }
+  .max-h-\[640px\] {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+}
