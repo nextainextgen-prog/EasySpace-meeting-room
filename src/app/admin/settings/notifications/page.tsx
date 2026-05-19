@@ -4,17 +4,16 @@ import {
   Sparkles,
   MessageCircle,
   TestTube,
-  ChevronLeft,
 } from "lucide-react";
 import Link from "next/link";
 import { AdminTopbar } from "@/components/admin/topbar";
-import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { IconTile } from "@/components/ui/icon-tile";
 import { listTelegramGroups, listTelegramRoutes } from "@/lib/data";
+import { SettingsShell } from "../_shell";
 
 export const dynamic = "force-dynamic";
 
@@ -85,21 +84,12 @@ export default async function NotificationSettingsPage() {
         subtitle="Group เดียว · แตกหัวข้อด้วย topic"
       />
 
-      <div className="p-6 lg:p-8 max-w-[1200px] w-full mx-auto space-y-5">
-        <div>
-          <Link
-            href="/admin/settings"
-            className="inline-flex items-center gap-1 text-xs text-ink-3 hover:text-primary-600 mb-2"
-          >
-            <ChevronLeft size={12} />
-            กลับสู่ตั้งค่าระบบ
-          </Link>
-          <PageHeader
-            title="Telegram (Single Group + Topics)"
-            description="แตกหัวข้อด้วย message_thread_id · ทดสอบส่งทุก event"
-          />
-        </div>
-
+      <div className="p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
+        <SettingsShell
+          title="Telegram (Single Group + Topics)"
+          description="แตกหัวข้อด้วย message_thread_id · ทดสอบส่งทุก event"
+        >
+        <div className="space-y-5">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2.5">
@@ -236,6 +226,8 @@ export default async function NotificationSettingsPage() {
             บันทึก
           </Button>
         </div>
+        </div>
+        </SettingsShell>
       </div>
     </>
   );
