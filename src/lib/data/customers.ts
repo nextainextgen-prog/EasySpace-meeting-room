@@ -26,30 +26,56 @@ export interface Customer {
   churn_risk: "low" | "medium" | "high" | null;
   blacklisted_at: string | null;
   blacklist_reason: string | null;
+  birthday: string | null;
+  company_anniversary: string | null;
+  owner_id: string | null;
+  health_score: number | null;
+  vat_type: "vat" | "non_vat" | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CustomerWithOwner extends Customer {
+  owner?: { id: string; full_name: string | null; email: string } | null;
 }
 
 export async function listCustomers(opts: { limit?: number; offset?: number } = {}) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("customers")
-    .select("*")
+    .select("*, owner:profiles!customers_owner_id_fkey(id, full_name, email)")
+    .is("archived_at", null)
     .order("last_booked_at", { ascending: false, nullsFirst: false })
     .range(opts.offset ?? 0, (opts.offset ?? 0) + (opts.limit ?? 50) - 1);
-  if (error) throw error;
-  return (data ?? []) as unknown as Customer[];
+  if (error) {
+    // Fall back to plain select if the FK/owner join isn't ready yet
+    const { data: rows } = await supabase
+      .from("customers")
+      .select("*")
+      .order("last_booked_at", { ascending: false, nullsFirst: false })
+      .range(opts.offset ?? 0, (opts.offset ?? 0) + (opts.limit ?? 50) - 1);
+    return (rows ?? []) as unknown as CustomerWithOwner[];
+  }
+  return (data ?? []) as unknown as CustomerWithOwner[];
 }
 
-export async function getCustomerById(id: string): Promise<Customer | null> {
+export async function getCustomerById(id: string): Promise<CustomerWithOwner | null> {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("customers")
-    .select("*")
+    .select("*, owner:profiles!customers_owner_id_fkey(id, full_name, email)")
     .eq("id", id)
     .maybeSingle();
-  if (error) throw error;
-  return data as unknown as Customer | null;
+  if (error) {
+    const { data: row } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    return (row ?? null) as unknown as CustomerWithOwner | null;
+  }
+  return (data ?? null) as unknown as CustomerWithOwner | null;
 }
 
 /**
