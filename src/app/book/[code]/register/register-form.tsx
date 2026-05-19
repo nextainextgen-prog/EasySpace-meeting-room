@@ -2,13 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowRight,
-  Check,
-  AlertCircle,
-  Loader2,
-  ChevronDown,
-} from "lucide-react";
+import { ArrowRight, Check, AlertCircle, Loader2 } from "lucide-react";
 import { Input, Label } from "@/components/ui/input";
 import { registerMember } from "@/lib/actions/members";
 import { createSupabaseBrowserClient } from "@/lib/integrations/supabase/client";
@@ -23,11 +17,9 @@ const REGISTER_COOKIE = "easyspace.register_intent";
 
 export function RegisterForm({ inviteCode, allowedDomains }: Props) {
   const router = useRouter();
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [position, setPosition] = useState("");
   const [department, setDepartment] = useState("");
+  const [email, setEmail] = useState("");
   const [pending, startTransition] = useTransition();
   const [oauthPending, setOauthPending] = useState(false);
   const [feedback, setFeedback] = useState<
@@ -35,11 +27,14 @@ export function RegisterForm({ inviteCode, allowedDomains }: Props) {
     | { kind: "error"; message: string; allowedDomains?: string[] }
     | null
   >(null);
-  const [showManual, setShowManual] = useState(false);
 
   function requireBasics(): boolean {
-    if (!fullName.trim()) {
-      setFeedback({ kind: "error", message: "กรอกชื่อ-นามสกุล" });
+    if (!position.trim()) {
+      setFeedback({ kind: "error", message: "กรอกตำแหน่ง" });
+      return false;
+    }
+    if (!department.trim()) {
+      setFeedback({ kind: "error", message: "กรอกแผนก" });
       return false;
     }
     return true;
@@ -49,12 +44,12 @@ export function RegisterForm({ inviteCode, allowedDomains }: Props) {
     setFeedback(null);
     if (!requireBasics()) return;
 
+    // Carry the form data through OAuth — name is filled from Google's
+    // identity at the callback so we don't need it from the user.
     const intent = {
       inviteCode,
-      fullName: fullName.trim(),
-      phone: phone.trim() || undefined,
-      position: position.trim() || undefined,
-      department: department.trim() || undefined,
+      position: position.trim(),
+      department: department.trim(),
     };
     document.cookie = `${REGISTER_COOKIE}=${encodeURIComponent(
       JSON.stringify(intent),
@@ -100,13 +95,15 @@ export function RegisterForm({ inviteCode, allowedDomains }: Props) {
     }
 
     startTransition(async () => {
+      // No name field — derive from the email's local-part so the server
+      // schema (which requires fullName) is happy. Admin can edit later.
+      const derivedName = email.split("@")[0].replace(/[._-]+/g, " ").trim();
       const res = await registerMember({
         inviteCode,
-        fullName: fullName.trim(),
+        fullName: derivedName || email,
         email: email.trim(),
-        phone: phone || undefined,
-        position: position || undefined,
-        department: department || undefined,
+        position: position.trim(),
+        department: department.trim(),
       });
       if (!res.ok) {
         setFeedback({
@@ -153,15 +150,26 @@ export function RegisterForm({ inviteCode, allowedDomains }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Name — primary, always shown */}
-      <div>
-        <Label>ชื่อ-นามสกุล *</Label>
-        <Input
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          placeholder="เช่น สมชาย ใจดี"
-          required
-        />
+      {/* ── Position + Department (required, top) ────────────────── */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>ตำแหน่ง *</Label>
+          <Input
+            value={position}
+            onChange={(e) => setPosition(e.target.value)}
+            placeholder="เช่น Manager"
+            required
+          />
+        </div>
+        <div>
+          <Label>แผนก *</Label>
+          <Input
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            placeholder="เช่น Sales"
+            required
+          />
+        </div>
       </div>
 
       {feedback?.kind === "error" && (
@@ -180,7 +188,7 @@ export function RegisterForm({ inviteCode, allowedDomains }: Props) {
         </div>
       )}
 
-      {/* Primary CTA — Google */}
+      {/* ── Google (primary) ──────────────────────────────────── */}
       <button
         type="button"
         onClick={continueWithGoogle}
@@ -206,83 +214,48 @@ export function RegisterForm({ inviteCode, allowedDomains }: Props) {
         </span>
       </button>
       <p className="text-[11px] text-ink-3 text-center">
-        วิธีที่แนะนำ — เร็ว ปลอดภัย ไม่ต้องตั้งรหัสผ่าน
+        วิธีที่แนะนำ — ใช้บัญชี Google · ชื่อจะดึงอัตโนมัติ
       </p>
 
-      {/* Manual fallback (collapsible) */}
-      <button
-        type="button"
-        onClick={() => setShowManual((s) => !s)}
-        className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-ink-3 hover:text-ink-1 pt-2"
-      >
-        <ChevronDown
-          size={12}
-          className={cn("transition", showManual && "rotate-180")}
-        />
-        หรือลงทะเบียนด้วยอีเมล (ไม่ใช้ Google)
-      </button>
+      {/* ── Divider ──────────────────────────────────────────── */}
+      <div className="flex items-center gap-3 py-1">
+        <span className="flex-1 h-px bg-line-soft" />
+        <span className="text-[10px] uppercase tracking-[0.12em] text-ink-3">
+          หรือ
+        </span>
+        <span className="flex-1 h-px bg-line-soft" />
+      </div>
 
-      {showManual && (
-        <form
-          onSubmit={handleSubmit}
-          className="mt-2 space-y-3 pt-3 border-t border-line-soft"
+      {/* ── Manual email (always visible) ─────────────────────── */}
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <Label>อีเมล *</Label>
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder={
+              allowedDomains.length > 0
+                ? `you@${allowedDomains[0]}`
+                : "you@example.com"
+            }
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={pending || oauthPending}
+          className={cn(
+            "w-full h-11 rounded-pill bg-ink-1 text-white",
+            "text-sm font-semibold tracking-tight",
+            "inline-flex items-center justify-center gap-2",
+            "hover:bg-ink-2 transition",
+            "disabled:opacity-60 disabled:pointer-events-none",
+          )}
         >
-          <div>
-            <Label>Email *</Label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={
-                allowedDomains.length > 0
-                  ? `you@${allowedDomains[0]}`
-                  : "you@example.com"
-              }
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>ตำแหน่ง (ไม่บังคับ)</Label>
-              <Input
-                value={position}
-                onChange={(e) => setPosition(e.target.value)}
-                placeholder="Manager"
-              />
-            </div>
-            <div>
-              <Label>แผนก (ไม่บังคับ)</Label>
-              <Input
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                placeholder="Sales"
-              />
-            </div>
-          </div>
-          <div>
-            <Label>เบอร์โทร (ไม่บังคับ)</Label>
-            <Input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="08x-xxx-xxxx"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={pending || oauthPending}
-            className={cn(
-              "w-full h-11 rounded-pill bg-ink-1 text-white",
-              "text-sm font-semibold tracking-tight",
-              "inline-flex items-center justify-center gap-2",
-              "hover:bg-ink-2 transition",
-              "disabled:opacity-60 disabled:pointer-events-none",
-            )}
-          >
-            {pending ? "กำลังลงทะเบียน..." : "ลงทะเบียน"}
-            {!pending && <ArrowRight size={14} />}
-          </button>
-        </form>
-      )}
+          {pending ? "กำลังลงทะเบียน..." : "ลงทะเบียน"}
+          {!pending && <ArrowRight size={14} />}
+        </button>
+      </form>
     </div>
   );
 }

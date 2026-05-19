@@ -9,7 +9,7 @@ const REGISTER_COOKIE = "easyspace.register_intent";
 
 type RegisterIntent = {
   inviteCode: string;
-  fullName: string;
+  fullName?: string;
   phone?: string;
   position?: string;
   department?: string;
@@ -54,10 +54,21 @@ export async function GET(request: NextRequest) {
       const intent = JSON.parse(
         decodeURIComponent(intentRaw),
       ) as RegisterIntent;
-      if (intent.inviteCode && intent.fullName && user.email) {
+      if (intent.inviteCode && user.email) {
+        // Prefer the name typed in the form; fall back to Google's
+        // identity metadata; final fallback to the email's local-part.
+        const googleName =
+          (user.user_metadata?.full_name as string | undefined) ??
+          (user.user_metadata?.name as string | undefined) ??
+          undefined;
+        const fullName =
+          intent.fullName?.trim() ||
+          googleName ||
+          user.email.split("@")[0];
+
         const res = await registerMember({
           inviteCode: intent.inviteCode,
-          fullName: intent.fullName,
+          fullName,
           email: user.email,
           phone: intent.phone || undefined,
           position: intent.position || undefined,
