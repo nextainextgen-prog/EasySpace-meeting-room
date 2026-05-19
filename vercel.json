@@ -3,6 +3,7 @@
   "framework": "nextjs",
   "buildCommand": "next build",
   "installCommand": "npm install",
+  "regions": ["bom1"],
   "crons": [
     {
       "path": "/api/cron/daily-brief",
