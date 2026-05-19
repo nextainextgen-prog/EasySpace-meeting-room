@@ -12,6 +12,7 @@ export * from "./users";
 export * from "./notifications";
 export * from "./analytics";
 export * from "./analytics-deep";
+export * from "./dashboard-deep";
 export * from "./organizations";
 export * from "./members";
 export * from "./invites";
