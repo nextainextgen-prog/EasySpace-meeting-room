@@ -86,6 +86,94 @@ export async function searchCustomers(query: string) {
   }));
 }
 
+/** Bookings for a room on a single day — used by the booking form calendar
+ * to display existing bookings and grey-out booked slots. */
+export async function listDayBookings(input: {
+  roomId: string;
+  date: string;
+}): Promise<
+  Array<{
+    id: string;
+    reference_code: string;
+    starts_at: string;
+    ends_at: string;
+    booking_status: string;
+    customer_name: string | null;
+  }>
+> {
+  if (!input.roomId || !input.date) return [];
+  const supabase = createSupabaseAdminClient();
+  const dayStart = new Date(`${input.date}T00:00:00+07:00`).toISOString();
+  const dayEnd = new Date(`${input.date}T23:59:59+07:00`).toISOString();
+  const { data } = await supabase
+    .from("bookings")
+    .select(
+      "id, reference_code, starts_at, ends_at, booking_status, customer:customers(display_name)",
+    )
+    .eq("room_id", input.roomId)
+    .in("booking_status", ["pending", "confirmed", "in_use"])
+    .gte("starts_at", dayStart)
+    .lte("starts_at", dayEnd)
+    .order("starts_at");
+  return ((data ?? []) as unknown as Array<{
+    id: string;
+    reference_code: string;
+    starts_at: string;
+    ends_at: string;
+    booking_status: string;
+    customer: { display_name: string } | null;
+  }>).map((b) => ({
+    id: b.id,
+    reference_code: b.reference_code,
+    starts_at: b.starts_at,
+    ends_at: b.ends_at,
+    booking_status: b.booking_status,
+    customer_name: b.customer?.display_name ?? null,
+  }));
+}
+
+/** Active promotions for the booking form dropdown. */
+export async function listActivePromotionsForBooking(): Promise<
+  Array<{
+    id: string;
+    name: string;
+    code: string | null;
+    discount_type: string;
+    discount_value: number;
+    max_discount: number | null;
+    min_order: number | null;
+    applicable_room_ids: string[];
+    ends_at: string | null;
+  }>
+> {
+  const supabase = createSupabaseAdminClient();
+  const nowIso = new Date().toISOString();
+  const { data } = await supabase
+    .from("promotions")
+    .select(
+      "id, name, code, discount_type, discount_value, max_discount, min_order, applicable_room_ids, starts_at, ends_at, status",
+    )
+    .eq("status", "active")
+    .lte("starts_at", nowIso)
+    .order("created_at", { ascending: false });
+
+  return ((data ?? []) as unknown as Array<{
+    id: string;
+    name: string;
+    code: string | null;
+    discount_type: string;
+    discount_value: number;
+    max_discount: number | null;
+    min_order: number | null;
+    applicable_room_ids: string[];
+    starts_at: string;
+    ends_at: string | null;
+    status: string;
+  }>)
+    .filter((p) => !p.ends_at || new Date(p.ends_at) >= new Date())
+    .map(({ starts_at: _s, status: _st, ...rest }) => rest);
+}
+
 const CreateBookingSchema = z.object({
   customer: z.object({
     name: z.string().min(1, "ใส่ชื่อลูกค้า"),
@@ -116,6 +204,7 @@ const CreateBookingSchema = z.object({
     addonsAmount: z.number().nonnegative().default(0),
     discountAmount: z.number().nonnegative().default(0),
     discountNote: z.string().optional(),
+    promotionId: z.string().uuid().optional(),
     totalAmount: z.number().nonnegative(),
     depositAmount: z.number().nonnegative().default(0),
     paymentStatus: z.enum(["unpaid", "deposit", "paid", "free"]),
@@ -139,6 +228,13 @@ export async function createBooking(raw: CreateBookingInput) {
 
   if (input.booking.paymentStatus === "free" && !input.booking.freeReason) {
     return { ok: false as const, error: "free_reason_required" };
+  }
+
+  if (
+    input.booking.discountAmount >
+    input.booking.baseAmount + input.booking.addonsAmount
+  ) {
+    return { ok: false as const, error: "discount_exceeds_subtotal" };
   }
 
   const supabase = createSupabaseAdminClient();
@@ -193,6 +289,7 @@ export async function createBooking(raw: CreateBookingInput) {
       addons_amount: input.booking.addonsAmount,
       discount_amount: input.booking.discountAmount,
       discount_note: input.booking.discountNote ?? null,
+      promotion_id: input.booking.promotionId ?? null,
       total_amount: input.booking.totalAmount,
       deposit_amount: input.booking.depositAmount,
       paid_amount: paidAmount,
@@ -238,6 +335,24 @@ export async function createBooking(raw: CreateBookingInput) {
       method: "bank_transfer",
       notes: "บันทึกพร้อมสร้างการจอง",
     } as never);
+  }
+
+  // 5b. Promotion usage tracking
+  if (input.booking.promotionId && input.booking.discountAmount > 0) {
+    await supabase.from("promotion_usages").insert({
+      promotion_id: input.booking.promotionId,
+      booking_id: bookingId,
+      customer_id: customerId,
+      saving: input.booking.discountAmount,
+    } as never);
+    // best-effort increment of uses_count
+    try {
+      await supabase.rpc("increment_promotion_uses" as never, {
+        p_promotion_id: input.booking.promotionId,
+      } as never);
+    } catch {
+      // optional RPC
+    }
   }
 
   // 6. Audit
