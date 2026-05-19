@@ -107,35 +107,88 @@ export async function moveBooking(raw: z.infer<typeof MoveSchema>) {
 /* ──────────────── Detail fetch (info + payments + audit) ──────────────── */
 export async function getBookingDetail(id: string) {
   const supabase = createSupabaseAdminClient();
-  const [bookingRes, paymentsRes, auditRes, addonsRes] = await Promise.all([
-    supabase
-      .from("bookings")
-      .select(
-        "*, customer:customers(id, display_name, phone, email, type, tags, total_bookings, total_spent), room:rooms(*), package:room_packages(id, name, hours, price), promotion:promotions(id, name, code)",
-      )
-      .eq("id", id)
-      .maybeSingle(),
-    supabase
-      .from("booking_payments")
-      .select(
-        "id, paid_at, amount, method, reference, slip_url, notes, recorded_by",
-      )
-      .eq("booking_id", id)
-      .order("paid_at", { ascending: false }),
-    supabase
-      .from("booking_audit_log")
-      .select("id, created_at, action, actor_name, changes, reason")
-      .eq("booking_id", id)
-      .order("created_at", { ascending: false })
-      .limit(50),
-    supabase
-      .from("booking_addons")
-      .select("addon_id, quantity, unit_price, addon:addons(name)")
-      .eq("booking_id", id),
-  ]);
+
+  // Step 1: fetch the base booking row alone — never fails on relation issues.
+  const { data: bookingRaw } = await supabase
+    .from("bookings")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (!bookingRaw) {
+    return {
+      booking: null,
+      payments: [],
+      audit: [],
+      addons: [],
+    };
+  }
+
+  const b = bookingRaw as Record<string, unknown>;
+
+  // Step 2: fetch relations in parallel. Each one is independently best-effort
+  // — a single failure does not block the rest. Joins are intentionally NOT
+  // nested via PostgREST embeds because `bookings.promotion_id` has no FK
+  // constraint (init.sql:252), which would break the embedded query.
+  const [customerRes, roomRes, packageRes, promotionRes, paymentsRes, auditRes, addonsRes] =
+    await Promise.all([
+      b.customer_id
+        ? supabase
+            .from("customers")
+            .select(
+              "id, display_name, phone, email, type, tags, total_bookings, total_spent",
+            )
+            .eq("id", b.customer_id as string)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      supabase
+        .from("rooms")
+        .select("*")
+        .eq("id", b.room_id as string)
+        .maybeSingle(),
+      b.package_id
+        ? supabase
+            .from("room_packages")
+            .select("id, name, hours, price")
+            .eq("id", b.package_id as string)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      b.promotion_id
+        ? supabase
+            .from("promotions")
+            .select("id, name, code")
+            .eq("id", b.promotion_id as string)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      supabase
+        .from("booking_payments")
+        .select(
+          "id, paid_at, amount, method, reference, slip_url, notes, recorded_by",
+        )
+        .eq("booking_id", id)
+        .order("paid_at", { ascending: false }),
+      supabase
+        .from("booking_audit_log")
+        .select("id, created_at, action, actor_name, changes, reason")
+        .eq("booking_id", id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("booking_addons")
+        .select("addon_id, quantity, unit_price, addon:addons(name)")
+        .eq("booking_id", id),
+    ]);
+
+  const booking = {
+    ...b,
+    customer: customerRes.data ?? null,
+    room: roomRes.data ?? null,
+    package: packageRes.data ?? null,
+    promotion: promotionRes.data ?? null,
+  } as Record<string, unknown>;
 
   return {
-    booking: bookingRes.data,
+    booking,
     payments: paymentsRes.data ?? [],
     audit: auditRes.data ?? [],
     addons: addonsRes.data ?? [],
