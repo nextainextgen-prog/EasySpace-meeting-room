@@ -16,6 +16,7 @@ import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card"
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { IconTile } from "@/components/ui/icon-tile";
+import { ImageUploader } from "@/components/ui/image-uploader";
 import { cn } from "@/lib/cn";
 import { formatBaht } from "@/lib/format";
 import type { Room, RoomPackage } from "@/lib/data/rooms";
@@ -93,6 +94,19 @@ export function RoomsManager({ rooms }: { rooms: RoomWithPkg[] }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
         {rooms.map((room) => (
           <Card key={room.id}>
+            {room.thumbnail_url && (
+              <div
+                className="rounded-card-sm overflow-hidden bg-surface-subtle/60 border border-line-soft mb-4 grid place-items-center"
+                style={{ aspectRatio: "1536 / 1384" }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={room.thumbnail_url}
+                  alt={room.name}
+                  className="max-w-full max-h-full object-contain"
+                />
+              </div>
+            )}
             <div
               className="h-2 rounded-full mb-4"
               style={{ background: room.color }}
@@ -515,16 +529,14 @@ function RoomFormModal({
             </div>
           </div>
 
-          <div>
-            <Label>Thumbnail URL</Label>
-            <Input
-              value={form.thumbnail_url}
-              onChange={(e) =>
-                setForm({ ...form, thumbnail_url: e.target.value })
-              }
-              placeholder="https://..."
-            />
-          </div>
+          <ImageUploader
+            label="รูปประจำห้อง (Thumbnail)"
+            hint="แนะนำ 1536×1384 px · PNG · JPG · WEBP · GIF · ไม่เกิน 10 MB · เห็นเต็มภาพไม่ถูกตัด"
+            value={form.thumbnail_url || null}
+            onChange={(url) =>
+              setForm({ ...form, thumbnail_url: url ?? "" })
+            }
+          />
 
           <div>
             <Label>วันให้บริการ</Label>
