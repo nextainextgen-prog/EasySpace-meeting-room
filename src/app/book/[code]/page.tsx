@@ -117,9 +117,7 @@ export default async function InviteLandingPage({ params }: PageProps) {
 
         <div className="mt-6 space-y-2">
           <Link
-            href={{
-              pathname: `/book/${code}/register`,
-            }}
+            href={`/member-login?invite=${encodeURIComponent(code)}`}
           >
             <Button
               variant="gradient"
@@ -127,16 +125,16 @@ export default async function InviteLandingPage({ params }: PageProps) {
               className="w-full"
               iconRight={<ArrowRight size={16} />}
             >
-              เริ่มใช้งาน
+              เข้าสู่ระบบด้วย Google
             </Button>
           </Link>
           <p className="text-center text-xs text-ink-3">
-            มีบัญชีอยู่แล้ว?{" "}
+            ยังไม่ได้สมัคร?{" "}
             <Link
-              href={`/login?next=/app`}
-              className="text-primary-600 font-medium"
+              href={`/book/${code}/register`}
+              className="text-primary-600 font-medium hover:underline"
             >
-              เข้าสู่ระบบ
+              ลงทะเบียนใหม่
             </Link>
           </p>
         </div>

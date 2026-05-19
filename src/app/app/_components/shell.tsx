@@ -38,7 +38,7 @@ export function AppShell({
   return (
     <div className="min-h-screen bg-surface-page pb-20 md:pb-0">
       <header className="bg-white border-b border-line sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto h-16 px-4 md:px-6 flex items-center gap-4">
+        <div className="h-16 px-4 md:px-6 lg:px-8 flex items-center gap-4">
           <Link href="/app" className="flex items-center gap-2.5">
             <span className="w-9 h-9 rounded-card-sm bg-primary-600 text-white grid place-items-center shadow-card">
               <Building2 size={18} strokeWidth={2} />
@@ -89,7 +89,7 @@ export function AppShell({
                 {profile.name}
               </span>
             </div>
-            <form action="/api/auth/logout" method="post">
+            <form action="/api/auth/logout?next=member" method="post">
               <button
                 type="submit"
                 className="w-10 h-10 rounded-pill bg-surface-subtle text-ink-2 hover:bg-line grid place-items-center transition"

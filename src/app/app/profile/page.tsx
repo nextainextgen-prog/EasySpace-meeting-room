@@ -152,7 +152,7 @@ export default async function ProfilePage() {
         <CardHeader>
           <CardTitle>ออกจากระบบ</CardTitle>
         </CardHeader>
-        <form action="/api/auth/logout" method="post">
+        <form action="/api/auth/logout?next=member" method="post">
           <Button
             type="submit"
             variant="secondary"
