@@ -1,4 +1,5 @@
 import { AdminSidebar } from "@/components/admin/sidebar";
+import { AuditTracker } from "@/components/admin/audit-tracker";
 import { requireRole } from "@/lib/auth";
 
 export default async function AdminLayout({
@@ -10,6 +11,7 @@ export default async function AdminLayout({
 
   return (
     <div className="min-h-screen flex bg-surface-page">
+      <AuditTracker />
       <AdminSidebar
         profile={{
           name: profile.full_name ?? profile.email,
