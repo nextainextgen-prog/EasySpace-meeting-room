@@ -11,6 +11,12 @@ const ALLOWED_MIME = new Set([
   "image/jpg",
   "image/webp",
   "image/gif",
+  // HEIC is normally converted to JPEG on the client (heic2any). Safari
+  // sometimes preserves the heic mime even after conversion or sends it
+  // directly — accept both so the upload doesn't reject.
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
 ]);
 
 export interface UploadResult {

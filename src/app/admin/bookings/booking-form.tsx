@@ -1577,20 +1577,24 @@ function RoomCard({
       )}
     >
       <div
-        className="h-24 w-full bg-cover bg-center"
+        className="relative w-full bg-surface-subtle/40 grid place-items-center overflow-hidden"
         style={{
-          backgroundImage: room.thumbnail_url
-            ? `url(${room.thumbnail_url})`
-            : undefined,
+          aspectRatio: "1536 / 1384",
           background: room.thumbnail_url
             ? undefined
             : `linear-gradient(135deg, ${room.color}33, ${room.color}10)`,
         }}
       >
-        {!room.thumbnail_url && (
-          <div className="h-full w-full grid place-items-center text-ink-3">
-            <ImageOff size={18} />
-          </div>
+        {room.thumbnail_url ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={room.thumbnail_url}
+            alt={room.name}
+            loading="lazy"
+            className="max-w-full max-h-full object-contain"
+          />
+        ) : (
+          <ImageOff size={18} className="text-ink-3" />
         )}
       </div>
       <div className="p-3">
