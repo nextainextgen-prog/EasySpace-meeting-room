@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Calendar, ShieldCheck, Sparkles, Users } from "lucide-react";
+import { ShieldCheck, Sparkles, Users } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { MemberLoginForm } from "./member-login-form";
@@ -42,83 +42,92 @@ export default async function MemberLoginPage({ searchParams }: PageProps) {
   const invite = params.invite ?? null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white via-surface-subtle/40 to-white flex items-center justify-center px-4 py-10">
+    <div
+      className="min-h-screen flex items-center justify-center p-5 sm:p-6"
+      style={{
+        background:
+          "radial-gradient(120% 80% at 50% 0%, rgba(59,91,219,0.08) 0%, transparent 55%), linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+      }}
+    >
       <div className="w-full max-w-md">
-        {/* Brand mark */}
-        <div className="flex flex-col items-center gap-2.5 mb-8">
-          <div className="w-12 h-12 rounded-card bg-primary-600 text-white grid place-items-center shadow-hero">
-            <Calendar size={22} strokeWidth={2} />
+        <div className="relative">
+          {/* Soft glow */}
+          <div className="absolute -inset-1 rounded-[32px] opacity-40 blur-xl bg-gradient-to-br from-primary-500/30 via-transparent to-transparent" />
+
+          {/* Card */}
+          <div className="relative rounded-[24px] bg-white shadow-pop border border-line-soft overflow-hidden">
+            {/* Top accent bar */}
+            <div className="h-1 bg-gradient-to-r from-primary-600 via-primary-500 to-primary-300" />
+
+            <div className="px-7 py-8 sm:px-9 sm:py-10">
+              {/* Brand wordmark — no icon */}
+              <div className="flex items-center justify-center mb-1.5">
+                <span className="text-[10px] uppercase tracking-[0.22em] text-ink-3 font-semibold">
+                  EasySpace · Member Portal
+                </span>
+              </div>
+
+              {/* Heading */}
+              <h1 className="mt-3 text-[28px] sm:text-[30px] font-bold tracking-tighter text-center leading-tight">
+                เข้าสู่ระบบสมาชิก
+              </h1>
+              <p className="mt-2.5 text-sm text-ink-3 text-center leading-relaxed">
+                สำหรับพนักงานในองค์กรที่ลงทะเบียนแล้ว
+                <br />
+                ใช้บัญชี Google เดียวกับที่สมัครได้ทันที
+              </p>
+
+              {/* Status messages */}
+              {justRegistered && (
+                <div className="mt-5 rounded-input bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-3.5 py-2.5 flex items-start gap-2">
+                  <Sparkles size={14} className="mt-0.5 shrink-0" />
+                  <span>
+                    ลงทะเบียนสำเร็จ — เข้าระบบด้วย Google ที่อีเมลตอนสมัครได้เลย
+                  </span>
+                </div>
+              )}
+              {errorMessage && (
+                <div className="mt-5 rounded-input bg-red-50 border border-red-100 text-red-700 text-sm px-3.5 py-2.5">
+                  {errorMessage}
+                </div>
+              )}
+
+              <MemberLoginForm />
+
+              {/* Trust micro-row */}
+              <div className="mt-6 flex items-center justify-center gap-4 text-[10px] text-ink-3 uppercase tracking-wider">
+                <span className="inline-flex items-center gap-1">
+                  <ShieldCheck size={11} />
+                  OAuth 2.0
+                </span>
+                <span className="w-1 h-1 rounded-full bg-line" />
+                <span className="inline-flex items-center gap-1">
+                  <Users size={11} />
+                  Member Only
+                </span>
+              </div>
+
+              <div className="mt-6 pt-5 border-t border-line-soft">
+                <p className="text-center text-xs text-ink-3">
+                  ยังไม่ได้สมัคร?{" "}
+                  <Link
+                    href={
+                      invite ? `/book/${invite}/register` : "/contact-admin"
+                    }
+                    className="text-primary-600 font-semibold hover:underline"
+                  >
+                    ลงทะเบียนใหม่
+                  </Link>
+                </p>
+              </div>
+            </div>
           </div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-ink-3 font-semibold">
-            EasySpace · Member
-          </p>
         </div>
 
-        {/* Card */}
-        <div className="surface-card !p-8 sm:!p-10">
-          <h1 className="text-2xl sm:text-[28px] font-bold tracking-tighter text-ink-1">
-            เข้าสู่ระบบสมาชิก
-          </h1>
-          <p className="mt-2 text-sm text-ink-3 leading-relaxed">
-            สำหรับพนักงานในองค์กรที่ลงทะเบียนแล้ว
-            <br />
-            ใช้บัญชี Google เดียวกับที่สมัครได้ทันที
-          </p>
-
-          {/* Status messages */}
-          {justRegistered && (
-            <div className="mt-5 rounded-input bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-3.5 py-2.5 flex items-start gap-2">
-              <Sparkles size={14} className="mt-0.5 shrink-0" />
-              <span>
-                ลงทะเบียนสำเร็จ — เข้าระบบด้วย Google ที่อีเมลตอนสมัครได้เลย
-              </span>
-            </div>
-          )}
-          {errorMessage && (
-            <div className="mt-5 rounded-input bg-red-50 border border-red-100 text-red-700 text-sm px-3.5 py-2.5">
-              {errorMessage}
-            </div>
-          )}
-
-          <MemberLoginForm />
-
-          {/* Trust micro-row */}
-          <div className="mt-6 flex items-center justify-center gap-4 text-[10px] text-ink-3 uppercase tracking-wider">
-            <span className="inline-flex items-center gap-1">
-              <ShieldCheck size={11} />
-              OAuth 2.0
-            </span>
-            <span className="w-1 h-1 rounded-full bg-line" />
-            <span className="inline-flex items-center gap-1">
-              <Users size={11} />
-              Member Only
-            </span>
-          </div>
-
-          <div className="mt-6 pt-5 border-t border-line-soft">
-            <p className="text-center text-xs text-ink-3">
-              ยังไม่ได้สมัคร?{" "}
-              <Link
-                href={
-                  invite ? `/book/${invite}/register` : "/contact-admin"
-                }
-                className="text-primary-600 font-medium hover:underline"
-              >
-                ลงทะเบียนใหม่
-              </Link>
-            </p>
-          </div>
-        </div>
-
-        {/* Footer admin link (kept tiny on purpose) */}
-        <p className="mt-6 text-center text-[11px] text-ink-3">
-          เป็นแอดมิน?{" "}
-          <Link
-            href="/login"
-            className="text-ink-2 hover:text-primary-600 font-medium hover:underline"
-          >
-            เข้าสู่ระบบหลังบ้าน
-          </Link>
+        <p className="text-center text-[11px] text-ink-3 mt-6">
+          Powered by{" "}
+          <span className="font-semibold text-ink-2">EasySpace</span> ·
+          ระบบจองห้องประชุม
         </p>
       </div>
     </div>
