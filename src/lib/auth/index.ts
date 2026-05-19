@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/integrations/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
@@ -15,51 +16,58 @@ export interface AuthProfile {
   last_login_at: string | null;
 }
 
-export async function getCurrentUser() {
+/**
+ * Memoized per-request via React `cache()`. A typical admin nav hits this
+ * 2-4 times (root layout + page + topbar + sidebar) — without dedup that's
+ * 2-4 round-trips to Supabase Auth (≈150-300ms each). With cache, one.
+ */
+export const getCurrentUser = cache(async () => {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   return user;
-}
+});
 
-export async function getCurrentProfile(): Promise<AuthProfile | null> {
-  const user = await getCurrentUser();
-  if (!user) return null;
+export const getCurrentProfile = cache(
+  async (): Promise<AuthProfile | null> => {
+    const user = await getCurrentUser();
+    if (!user) return null;
 
-  const admin = createSupabaseAdminClient();
-  const { data } = await admin
-    .from("profiles")
-    .select(
-      "id, email, full_name, phone, avatar_url, role, is_active, two_factor_enabled, last_login_at",
-    )
-    .eq("id", user.id)
-    .maybeSingle();
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin
+      .from("profiles")
+      .select(
+        "id, email, full_name, phone, avatar_url, role, is_active, two_factor_enabled, last_login_at",
+      )
+      .eq("id", user.id)
+      .maybeSingle();
 
-  if (!data) {
-    // Auto-provision: first time the user signs in, bootstrap a profile row
-    // from auth metadata so admin routes work immediately.
-    const fallback = {
-      id: user.id,
-      email: user.email ?? "",
-      full_name:
-        (user.user_metadata?.full_name as string | undefined) ??
-        (user.user_metadata?.name as string | undefined) ??
-        null,
-      phone: (user.user_metadata?.phone as string | undefined) ?? null,
-      avatar_url:
-        (user.user_metadata?.avatar_url as string | undefined) ?? null,
-      role: "viewer" as Role,
-      is_active: true,
-      two_factor_enabled: false,
-      last_login_at: null,
-    };
-    await admin.from("profiles").insert(fallback as never);
-    return fallback;
-  }
+    if (!data) {
+      // Auto-provision: first time the user signs in, bootstrap a profile row
+      // from auth metadata so admin routes work immediately.
+      const fallback = {
+        id: user.id,
+        email: user.email ?? "",
+        full_name:
+          (user.user_metadata?.full_name as string | undefined) ??
+          (user.user_metadata?.name as string | undefined) ??
+          null,
+        phone: (user.user_metadata?.phone as string | undefined) ?? null,
+        avatar_url:
+          (user.user_metadata?.avatar_url as string | undefined) ?? null,
+        role: "viewer" as Role,
+        is_active: true,
+        two_factor_enabled: false,
+        last_login_at: null,
+      };
+      await admin.from("profiles").insert(fallback as never);
+      return fallback;
+    }
 
-  return data as unknown as AuthProfile;
-}
+    return data as unknown as AuthProfile;
+  },
+);
 
 export async function requireAuth(): Promise<AuthProfile> {
   const profile = await getCurrentProfile();

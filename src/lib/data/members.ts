@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -33,10 +34,14 @@ export interface MemberContext {
 /**
  * Look up the member record for the current logged-in user.
  * Returns null if the user is signed in but has not yet been linked to a member.
+ *
+ * Memoized per-request — /app pages + /org-admin layout call this from
+ * multiple places per nav; cache() dedupes the lookup.
  */
-export async function getCurrentMember(): Promise<MemberContext | null> {
-  const user = await getCurrentUser();
-  if (!user || !user.email) return null;
+export const getCurrentMember = cache(
+  async (): Promise<MemberContext | null> => {
+    const user = await getCurrentUser();
+    if (!user || !user.email) return null;
 
   const admin = createSupabaseAdminClient();
   // Match by profile_id first; fall back to email (some flows create the
@@ -87,7 +92,7 @@ export async function getCurrentMember(): Promise<MemberContext | null> {
     tier: row.tier,
     joinedAt: row.joined_at,
   };
-}
+});
 
 export async function listMembersByOrg(orgId: string): Promise<Member[]> {
   const admin = createSupabaseAdminClient();
