@@ -272,6 +272,140 @@ export async function updateBookingInfo(
   return { ok: true as const };
 }
 
+/* ──────────────── Update booking_status (lifecycle) ──────────────── */
+const SetBookingStatusSchema = z.object({
+  bookingId: z.string().uuid(),
+  status: z.enum([
+    "pending",
+    "confirmed",
+    "in_use",
+    "completed",
+    "cancelled",
+    "no_show",
+  ]),
+  reason: z.string().optional(),
+});
+
+export async function setBookingStatus(
+  raw: z.infer<typeof SetBookingStatusSchema>,
+) {
+  const parsed = SetBookingStatusSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false as const, error: "validation" };
+  const input = parsed.data;
+  const supabase = createSupabaseAdminClient();
+
+  const { data: existing } = await supabase
+    .from("bookings")
+    .select("id, booking_status")
+    .eq("id", input.bookingId)
+    .maybeSingle();
+  if (!existing) return { ok: false as const, error: "not_found" };
+
+  const patch: Record<string, unknown> = {
+    booking_status: input.status,
+  };
+  if (input.status === "cancelled") {
+    patch.cancelled_at = new Date().toISOString();
+    patch.cancelled_reason = input.reason ?? "ยกเลิกจาก modal";
+  }
+
+  const { error } = await supabase
+    .from("bookings")
+    .update(patch as never)
+    .eq("id", input.bookingId);
+  if (error) return { ok: false as const, error: error.message };
+
+  const me = await getCurrentProfile();
+  await supabase.from("booking_audit_log").insert({
+    booking_id: input.bookingId,
+    action:
+      input.status === "cancelled"
+        ? "cancelled"
+        : input.status === "completed"
+          ? "completed"
+          : input.status === "no_show"
+            ? "no_show"
+            : "status_changed",
+    actor_id: me?.id ?? null,
+    actor_name: me?.full_name ?? me?.email ?? null,
+    reason: input.reason ?? null,
+    changes: {
+      booking_status: {
+        from: (existing as { booking_status: string }).booking_status,
+        to: input.status,
+      },
+    },
+  } as never);
+
+  revalidatePath("/admin/calendar");
+  revalidatePath("/admin/bookings");
+  revalidatePath("/admin/finance");
+  return { ok: true as const, status: input.status };
+}
+
+/* ──────────────── Mark payment status (deposit / paid / unpaid / free) ──────────────── */
+const SetPaymentStatusSchema = z.object({
+  bookingId: z.string().uuid(),
+  status: z.enum(["unpaid", "deposit", "paid", "free"]),
+  freeReason: z.string().optional(),
+});
+
+export async function setPaymentStatus(
+  raw: z.infer<typeof SetPaymentStatusSchema>,
+) {
+  const parsed = SetPaymentStatusSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false as const, error: "validation" };
+  const input = parsed.data;
+  const supabase = createSupabaseAdminClient();
+
+  const { data: existing } = await supabase
+    .from("bookings")
+    .select("id, total_amount, paid_amount, payment_status, reference_code")
+    .eq("id", input.bookingId)
+    .maybeSingle();
+  if (!existing) return { ok: false as const, error: "not_found" };
+  const row = existing as {
+    total_amount: number;
+    paid_amount: number;
+    payment_status: string;
+    reference_code: string;
+  };
+
+  const patch: Record<string, unknown> = { payment_status: input.status };
+  if (input.status === "paid") {
+    // align paid_amount to total
+    if (Number(row.paid_amount) < Number(row.total_amount)) {
+      patch.paid_amount = row.total_amount;
+    }
+  } else if (input.status === "free") {
+    patch.free_reason = input.freeReason ?? "free";
+  } else if (input.status === "unpaid") {
+    patch.paid_amount = 0;
+  }
+
+  const { error } = await supabase
+    .from("bookings")
+    .update(patch as never)
+    .eq("id", input.bookingId);
+  if (error) return { ok: false as const, error: error.message };
+
+  const me = await getCurrentProfile();
+  await supabase.from("booking_audit_log").insert({
+    booking_id: input.bookingId,
+    action: input.status === "paid" ? "paid" : "payment_status_changed",
+    actor_id: me?.id ?? null,
+    actor_name: me?.full_name ?? me?.email ?? null,
+    changes: {
+      payment_status: { from: row.payment_status, to: input.status },
+    },
+  } as never);
+
+  revalidatePath("/admin/calendar");
+  revalidatePath("/admin/bookings");
+  revalidatePath("/admin/finance");
+  return { ok: true as const, status: input.status };
+}
+
 /* ──────────────── Bulk operations ──────────────── */
 const BulkIdsSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(100),

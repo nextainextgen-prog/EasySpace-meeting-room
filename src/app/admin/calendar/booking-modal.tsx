@@ -24,6 +24,8 @@ import {
   updateBookingInfo,
   acquireBookingLock,
   releaseBookingLock,
+  setBookingStatus,
+  setPaymentStatus,
 } from "@/lib/actions/calendar";
 import { cancelBooking } from "@/lib/actions/bookings";
 
@@ -41,6 +43,7 @@ export function BookingModal({ bookingId, onClose, onSaved }: Props) {
   const [tab, setTab] = useState<Tab>("info");
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [lockStatus, setLockStatus] = useState<
     | { kind: "mine" }
     | { kind: "locked"; by: string; until: string }
@@ -51,31 +54,91 @@ export function BookingModal({ bookingId, onClose, onSaved }: Props) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const d = await getBookingDetail(bookingId);
-      if (!cancelled) setDetail(d);
-      const lockRes = await acquireBookingLock(bookingId);
-      if (!cancelled) {
-        if (lockRes.ok) setLockStatus({ kind: "mine" });
-        else if (lockRes.error === "locked_by_other")
-          setLockStatus({
-            kind: "locked",
-            by: lockRes.lockedBy ?? "ผู้ใช้อื่น",
-            until: lockRes.until ?? "",
-          });
+      setLoadError(null);
+      try {
+        const d = await getBookingDetail(bookingId);
+        if (!cancelled) setDetail(d);
+      } catch (e) {
+        if (!cancelled)
+          setLoadError(
+            e instanceof Error ? e.message : "โหลดข้อมูลการจองไม่สำเร็จ",
+          );
       }
-      setLoading(false);
+      // Lock is best-effort — never block the modal on its failure
+      try {
+        const lockRes = await acquireBookingLock(bookingId);
+        if (!cancelled) {
+          if (lockRes.ok) setLockStatus({ kind: "mine" });
+          else if (lockRes.error === "locked_by_other")
+            setLockStatus({
+              kind: "locked",
+              by: lockRes.lockedBy ?? "ผู้ใช้อื่น",
+              until: lockRes.until ?? "",
+            });
+        }
+      } catch {
+        // ignore — modal stays editable
+      }
+      if (!cancelled) setLoading(false);
     })();
     return () => {
       cancelled = true;
-      void releaseBookingLock(bookingId);
+      void releaseBookingLock(bookingId).catch(() => {});
     };
   }, [bookingId]);
 
-  if (loading || !detail || !detail.booking) {
+  if (loading) {
     return (
       <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 backdrop-blur-sm p-4">
-        <div className="w-full max-w-3xl surface-card !p-6">
-          <p className="text-sm text-ink-3">กำลังโหลด...</p>
+        <div className="w-full max-w-3xl surface-card !p-6 flex items-center gap-3">
+          <span className="inline-block w-4 h-4 rounded-pill border-2 border-primary-200 border-t-primary-600 animate-spin" />
+          <p className="text-sm text-ink-2">กำลังโหลดข้อมูลการจอง...</p>
+          <button
+            onClick={onClose}
+            className="ml-auto text-ink-3 hover:text-ink-1 text-xs"
+          >
+            ยกเลิก
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError || !detail || !detail.booking) {
+    return (
+      <div className="fixed inset-0 z-50 grid place-items-center bg-ink-1/40 backdrop-blur-sm p-4">
+        <div className="w-full max-w-md surface-card !p-6">
+          <p className="text-sm font-semibold tracking-tight mb-1">
+            เปิดข้อมูลการจองไม่สำเร็จ
+          </p>
+          <p className="text-xs text-ink-3 mb-4">
+            {loadError ?? "ไม่พบข้อมูลการจองนี้ — อาจถูกลบหรือยังไม่ sync"}
+          </p>
+          <div className="flex items-center gap-2 justify-end">
+            <Button variant="secondary" size="sm" onClick={onClose}>
+              ปิด
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setLoading(true);
+                setLoadError(null);
+                getBookingDetail(bookingId)
+                  .then((d) => {
+                    setDetail(d);
+                    setLoading(false);
+                  })
+                  .catch((e) => {
+                    setLoadError(
+                      e instanceof Error ? e.message : "โหลดไม่สำเร็จ",
+                    );
+                    setLoading(false);
+                  });
+              }}
+            >
+              ลองอีกครั้ง
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -304,6 +367,14 @@ function InfoTab({
 
   return (
     <div className="space-y-4">
+      <BookingStatusBar
+        bookingId={b.id as string}
+        currentStatus={(b.booking_status as BookingStatusKey) ?? "pending"}
+        currentPayment={(b.payment_status as PaymentStatusKey) ?? "unpaid"}
+        readonly={readonly}
+        onChanged={(patch) => onSaved(patch)}
+      />
+
       <div className="grid grid-cols-2 gap-3">
         <Info label="ลูกค้า" value={(customer.display_name as string) ?? "—"} />
         <Info
@@ -833,6 +904,140 @@ function Footer({
             ปิด
           </Button>
         </>
+      )}
+    </div>
+  );
+}
+
+type BookingStatusKey =
+  | "pending"
+  | "confirmed"
+  | "in_use"
+  | "completed"
+  | "cancelled"
+  | "no_show";
+type PaymentStatusKey = "unpaid" | "deposit" | "paid" | "free";
+
+const BOOKING_STATUS_OPTIONS: Array<{
+  id: BookingStatusKey;
+  label: string;
+  tone: "muted" | "info" | "warning" | "success" | "danger";
+}> = [
+  { id: "pending", label: "รอยืนยัน", tone: "muted" },
+  { id: "confirmed", label: "ยืนยันแล้ว", tone: "info" },
+  { id: "in_use", label: "กำลังใช้", tone: "warning" },
+  { id: "completed", label: "เสร็จสิ้น", tone: "success" },
+  { id: "no_show", label: "ไม่มา", tone: "danger" },
+];
+
+const PAYMENT_STATUS_OPTIONS: Array<{
+  id: PaymentStatusKey;
+  label: string;
+  tone: "danger" | "warning" | "success" | "muted";
+}> = [
+  { id: "unpaid", label: "ค้างจ่าย", tone: "danger" },
+  { id: "deposit", label: "มัดจำ", tone: "warning" },
+  { id: "paid", label: "จ่ายครบ", tone: "success" },
+  { id: "free", label: "ฟรี", tone: "muted" },
+];
+
+function BookingStatusBar({
+  bookingId,
+  currentStatus,
+  currentPayment,
+  readonly,
+  onChanged,
+}: {
+  bookingId: string;
+  currentStatus: BookingStatusKey;
+  currentPayment: PaymentStatusKey;
+  readonly: boolean;
+  onChanged: (patch: Record<string, unknown>) => void;
+}) {
+  const [busy, startTransition] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+
+  function changeBooking(next: BookingStatusKey) {
+    if (next === currentStatus || readonly || busy) return;
+    setErr(null);
+    startTransition(async () => {
+      const r = await setBookingStatus({ bookingId, status: next });
+      if (r.ok) onChanged({ booking_status: next });
+      else setErr(`เปลี่ยนสถานะไม่สำเร็จ: ${r.error}`);
+    });
+  }
+
+  function changePayment(next: PaymentStatusKey) {
+    if (next === currentPayment || readonly || busy) return;
+    setErr(null);
+    startTransition(async () => {
+      const r = await setPaymentStatus({ bookingId, status: next });
+      if (r.ok) onChanged({ payment_status: next });
+      else setErr(`เปลี่ยนสถานะไม่สำเร็จ: ${r.error}`);
+    });
+  }
+
+  return (
+    <div className="rounded-input border border-line-soft bg-surface-subtle/50 p-3 space-y-3">
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.06em] text-ink-3 font-semibold mb-2">
+          สถานะการจอง
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {BOOKING_STATUS_OPTIONS.map((opt) => {
+            const active = opt.id === currentStatus;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                disabled={readonly || busy}
+                onClick={() => changeBooking(opt.id)}
+                className={cn(
+                  "px-3 h-8 rounded-pill text-[11px] font-medium border transition",
+                  active
+                    ? "border-primary-600 bg-primary-50 text-primary-700"
+                    : "border-line bg-white hover:bg-surface-subtle text-ink-2",
+                  (readonly || busy) && "opacity-60 cursor-not-allowed",
+                )}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.06em] text-ink-3 font-semibold mb-2">
+          สถานะการชำระเงิน
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {PAYMENT_STATUS_OPTIONS.map((opt) => {
+            const active = opt.id === currentPayment;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                disabled={readonly || busy}
+                onClick={() => changePayment(opt.id)}
+                className={cn(
+                  "px-3 h-8 rounded-pill text-[11px] font-medium border transition",
+                  active
+                    ? "border-primary-600 bg-primary-50 text-primary-700"
+                    : "border-line bg-white hover:bg-surface-subtle text-ink-2",
+                  (readonly || busy) && "opacity-60 cursor-not-allowed",
+                )}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-ink-3 mt-2">
+          เลือก &quot;จ่ายครบ&quot; จะปรับ paid_amount ให้เท่ายอดรวมโดยอัตโนมัติ
+        </p>
+      </div>
+      {err && (
+        <p className="text-[11px] text-red-600">{err}</p>
       )}
     </div>
   );
