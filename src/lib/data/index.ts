@@ -6,6 +6,7 @@ export * from "./customer-360";
 export * from "./bookings";
 export * from "./telegram";
 export * from "./promotions";
+export * from "./promotions-deep";
 export * from "./finance";
 export * from "./users";
 export * from "./notifications";
