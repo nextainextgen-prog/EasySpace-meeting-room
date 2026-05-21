@@ -257,6 +257,104 @@ export async function resendInviteEmail(id: string) {
   return { ok: true as const };
 }
 
+function generateTempPassword(length = 12) {
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghijkmnpqrstuvwxyz";
+  const digits = "23456789";
+  const symbols = "!@#$%^&*";
+  const all = upper + lower + digits + symbols;
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  const picks = [
+    upper[bytes[0] % upper.length],
+    lower[bytes[1] % lower.length],
+    digits[bytes[2] % digits.length],
+    symbols[bytes[3] % symbols.length],
+  ];
+  for (let i = 4; i < length; i++) picks.push(all[bytes[i] % all.length]);
+  for (let i = picks.length - 1; i > 0; i--) {
+    const j = bytes[i] % (i + 1);
+    [picks[i], picks[j]] = [picks[j], picks[i]];
+  }
+  return picks.join("");
+}
+
+/** Force-set a password for an admin (super admin only). Returns the plain
+ *  password so it can be shown once to the operator and shared out-of-band. */
+export async function setAdminPassword(
+  id: string,
+  password?: string,
+) {
+  const supabase = createSupabaseAdminClient();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("email")
+    .eq("id", id)
+    .maybeSingle();
+  if (!profile) return { ok: false as const, error: "not_found" };
+
+  const pwd = password && password.length >= 8 ? password : generateTempPassword();
+
+  const { error } = await supabase.auth.admin.updateUserById(id, {
+    password: pwd,
+    email_confirm: true,
+  });
+  if (error) return { ok: false as const, error: error.message };
+
+  await recordAudit({
+    action: "admin_password_set",
+    targetType: "profile",
+    targetId: id,
+    changes: { generated: !password },
+  });
+
+  return {
+    ok: true as const,
+    password: pwd,
+    email: (profile as { email: string }).email,
+  };
+}
+
+/** Generate a one-time recovery link the operator can copy and DM to the
+ *  admin (useful when Supabase SMTP is unconfigured / email bounces). */
+export async function generateAdminResetLink(id: string) {
+  const supabase = createSupabaseAdminClient();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("email")
+    .eq("id", id)
+    .maybeSingle();
+  if (!profile) return { ok: false as const, error: "not_found" };
+  const email = (profile as { email: string }).email;
+
+  const site =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    process.env.NEXT_PUBLIC_VERCEL_URL ??
+    "";
+  const redirectTo = site
+    ? `${site.startsWith("http") ? site : `https://${site}`}/reset-password`
+    : undefined;
+
+  const { data, error } = await supabase.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    options: redirectTo ? { redirectTo } : undefined,
+  });
+  if (error) return { ok: false as const, error: error.message };
+
+  await recordAudit({
+    action: "admin_reset_link_generated",
+    targetType: "profile",
+    targetId: id,
+  });
+
+  return {
+    ok: true as const,
+    email,
+    actionLink: data?.properties?.action_link ?? null,
+  };
+}
+
 /** Read per-admin metadata (failed_attempts / ip_whitelist / etc.) */
 export async function getAdminMetadata(ids: string[]) {
   if (ids.length === 0) return {};

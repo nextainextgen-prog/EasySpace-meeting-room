@@ -22,6 +22,9 @@ import {
   Activity,
   Send,
   Upload,
+  KeyRound,
+  Copy,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
@@ -38,6 +41,8 @@ import {
   suspendAdmin,
   restoreAdmin,
   resendInviteEmail,
+  setAdminPassword,
+  generateAdminResetLink,
 } from "@/lib/actions/admin-users";
 import {
   upsertOrganization,
@@ -226,6 +231,12 @@ function AdminsTab({
   const [editing, setEditing] = useState<AdminRow | null>(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("");
+  const [credential, setCredential] = useState<{
+    email: string;
+    password?: string;
+    link?: string;
+    mode: "password" | "link";
+  } | null>(null);
 
   const filtered = admins.filter((a) => {
     if (roleFilter && a.role !== roleFilter) return false;
@@ -256,6 +267,38 @@ function AdminsTab({
   async function onResendInvite(id: string) {
     const r = await resendInviteEmail(id);
     notify(r.ok ? "ส่งอีเมล invite ใหม่แล้ว" : `ไม่สำเร็จ: ${r.error}`);
+  }
+
+  async function onSetPassword(id: string) {
+    if (
+      !confirm(
+        "ระบบจะสร้างรหัสผ่านชั่วคราวให้แอดมินคนนี้ทันที (จะแสดงเพียงครั้งเดียว) ดำเนินการต่อ?",
+      )
+    )
+      return;
+    const r = await setAdminPassword(id);
+    if (r.ok) {
+      setCredential({
+        email: r.email,
+        password: r.password,
+        mode: "password",
+      });
+    } else {
+      notify(`ไม่สำเร็จ: ${r.error}`);
+    }
+  }
+
+  async function onGenerateResetLink(id: string) {
+    const r = await generateAdminResetLink(id);
+    if (r.ok && r.actionLink) {
+      setCredential({
+        email: r.email,
+        link: r.actionLink,
+        mode: "link",
+      });
+    } else {
+      notify(`ไม่สำเร็จ: ${"error" in r ? r.error : "ไม่ได้ลิงก์"}`);
+    }
   }
 
   return (
@@ -431,11 +474,25 @@ function AdminsTab({
                         </button>
                         <DropdownActions>
                           <button
+                            onClick={() => onSetPassword(a.id)}
+                            className="block w-full text-left px-3 py-1.5 text-xs hover:bg-primary-50"
+                          >
+                            <KeyRound size={11} className="inline mr-1" />
+                            ตั้งรหัสผ่านชั่วคราว
+                          </button>
+                          <button
+                            onClick={() => onGenerateResetLink(a.id)}
+                            className="block w-full text-left px-3 py-1.5 text-xs hover:bg-primary-50"
+                          >
+                            <LinkIcon size={11} className="inline mr-1" />
+                            คัดลอกลิงก์ตั้งรหัสผ่าน
+                          </button>
+                          <button
                             onClick={() => onResendInvite(a.id)}
                             className="block w-full text-left px-3 py-1.5 text-xs hover:bg-primary-50"
                           >
                             <RefreshCw size={11} className="inline mr-1" />
-                            ส่ง invite ใหม่
+                            ส่ง invite ใหม่ (อีเมล)
                           </button>
                           <button
                             onClick={() => onSuspend(a.id, a.is_active)}
@@ -484,7 +541,145 @@ function AdminsTab({
           }}
         />
       )}
+      {credential && (
+        <CredentialModal
+          credential={credential}
+          onClose={() => setCredential(null)}
+        />
+      )}
     </>
+  );
+}
+
+function CredentialModal({
+  credential,
+  onClose,
+}: {
+  credential: {
+    email: string;
+    password?: string;
+    link?: string;
+    mode: "password" | "link";
+  };
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState<"email" | "password" | "link" | null>(
+    null,
+  );
+  async function copy(text: string, tag: "email" | "password" | "link") {
+    await navigator.clipboard.writeText(text);
+    setCopied(tag);
+    setTimeout(() => setCopied(null), 1500);
+  }
+  const isPassword = credential.mode === "password";
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md surface-card !p-0 overflow-hidden">
+        <div className="p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
+          <div>
+            <p className="font-bold tracking-tight inline-flex items-center gap-1.5">
+              {isPassword ? (
+                <KeyRound size={14} className="text-primary-600" />
+              ) : (
+                <LinkIcon size={14} className="text-primary-600" />
+              )}
+              {isPassword ? "รหัสผ่านชั่วคราว" : "ลิงก์ตั้งรหัสผ่าน"}
+            </p>
+            <p className="text-xs text-ink-3 mt-0.5">
+              {isPassword
+                ? "แสดงเพียงครั้งเดียว — คัดลอกแล้วส่งให้แอดมินทาง Telegram/แชต"
+                : "ลิงก์มีอายุจำกัด — ส่งให้แอดมินเพื่อเข้าไปตั้งรหัสผ่านเอง"}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.06em] text-ink-3 mb-1">
+              อีเมล
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-sm font-mono px-3 py-2 rounded-input bg-surface-subtle break-all">
+                {credential.email}
+              </code>
+              <button
+                onClick={() => copy(credential.email, "email")}
+                className="w-9 h-9 grid place-items-center rounded-input border border-line text-ink-2 hover:bg-surface-subtle"
+                aria-label="คัดลอกอีเมล"
+              >
+                {copied === "email" ? (
+                  <Check size={14} className="text-emerald-600" />
+                ) : (
+                  <Copy size={14} />
+                )}
+              </button>
+            </div>
+          </div>
+          {isPassword && credential.password && (
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.06em] text-ink-3 mb-1">
+                รหัสผ่าน
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-sm font-mono px-3 py-2 rounded-input bg-amber-50 border border-amber-200 break-all">
+                  {credential.password}
+                </code>
+                <button
+                  onClick={() =>
+                    copy(credential.password!, "password")
+                  }
+                  className="w-9 h-9 grid place-items-center rounded-input border border-line text-ink-2 hover:bg-surface-subtle"
+                  aria-label="คัดลอกรหัสผ่าน"
+                >
+                  {copied === "password" ? (
+                    <Check size={14} className="text-emerald-600" />
+                  ) : (
+                    <Copy size={14} />
+                  )}
+                </button>
+              </div>
+              <p className="text-[11px] text-amber-700 mt-2 inline-flex items-center gap-1">
+                <AlertTriangle size={11} />
+                แอดมินควรเปลี่ยนรหัสผ่านเองหลังเข้าระบบครั้งแรก
+              </p>
+            </div>
+          )}
+          {!isPassword && credential.link && (
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.06em] text-ink-3 mb-1">
+                ลิงก์ตั้งรหัสผ่าน
+              </p>
+              <div className="flex items-start gap-2">
+                <code className="flex-1 text-[11px] font-mono px-3 py-2 rounded-input bg-surface-subtle break-all">
+                  {credential.link}
+                </code>
+                <button
+                  onClick={() => copy(credential.link!, "link")}
+                  className="w-9 h-9 shrink-0 grid place-items-center rounded-input border border-line text-ink-2 hover:bg-surface-subtle"
+                  aria-label="คัดลอกลิงก์"
+                >
+                  {copied === "link" ? (
+                    <Check size={14} className="text-emerald-600" />
+                  ) : (
+                    <Copy size={14} />
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-4 bg-surface-subtle border-t border-line-soft flex justify-end">
+          <Button variant="primary" size="sm" onClick={onClose}>
+            ปิด
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
