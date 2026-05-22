@@ -1,0 +1,44 @@
+name: Telegram time-alerts cron
+
+# External scheduler — Vercel Hobby plan caps in-platform crons at once
+# per day, which is too coarse for near-start / near-end booking alerts.
+# GitHub Actions runs this every ~5 min for free (best-effort: GitHub may
+# delay scheduled runs during heavy load, typical delay 0-15 min).
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   APP_URL       — full production URL, e.g. https://easy-space-meeting-room.vercel.app
+#   CRON_SECRET   — must match the same env var on Vercel (optional but
+#                   recommended — the endpoint returns 401 if Vercel has
+#                   CRON_SECRET set and the request header doesn't match)
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # manual trigger from the Actions tab for testing
+
+concurrency:
+  group: time-alerts
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Hit /api/cron/time-alerts
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          URL="${APP_URL:-https://easy-space-meeting-room.vercel.app}/api/cron/time-alerts"
+          echo "Pinging $URL"
+          if [ -n "${CRON_SECRET:-}" ]; then
+            curl -fsSL --max-time 60 \
+              -H "Authorization: Bearer ${CRON_SECRET}" \
+              "$URL" | head -c 500
+          else
+            curl -fsSL --max-time 60 "$URL" | head -c 500
+          fi
+          echo
+          echo "Done."
