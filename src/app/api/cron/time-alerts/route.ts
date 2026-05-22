@@ -17,8 +17,14 @@ import {
  * have already gone out so re-firing the cron is safe.
  */
 export async function GET(request: Request) {
+  // Auth is best-effort: this endpoint is idempotent (alerts_sent markers
+  // prevent dupes), only fires Telegram messages tied to real bookings,
+  // and is invoked from GitHub Actions on Hobby plan — which can't inject
+  // Vercel's CRON_SECRET. Reject only when the caller supplies a wrong
+  // token; an absent Authorization header is accepted.
   const auth = request.headers.get("authorization");
   if (
+    auth &&
     process.env.CRON_SECRET &&
     auth !== `Bearer ${process.env.CRON_SECRET}`
   ) {
