@@ -1,18 +1,27 @@
 "use client";
 
-import type { LucideIcon } from "lucide-react";
+import { Mail, MessageCircle, Phone } from "lucide-react";
+
+const ICONS = {
+  call: Phone,
+  email: Mail,
+  line: MessageCircle,
+} as const;
+
+type IconKind = keyof typeof ICONS;
 
 export function ActionIcon({
   href,
   tip,
-  icon: Icon,
+  kind,
   external,
 }: {
   href?: string;
   tip: string;
-  icon: LucideIcon;
+  kind: IconKind;
   external?: boolean;
 }) {
+  const Icon = ICONS[kind];
   if (!href) {
     return (
       <span

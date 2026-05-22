@@ -24,8 +24,6 @@ import {
   Mail,
   Send,
   Trash2,
-  Save,
-  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -942,9 +940,11 @@ function CalendarSidebar({
   onDeletePreset: (id: string) => void;
   bookings: BookingWithRelations[];
 }) {
-  const [savePresetOpen, setSavePresetOpen] = useState(false);
-  const [presetName, setPresetName] = useState("");
   void view;
+  void presets;
+  void onApplyPreset;
+  void onSavePreset;
+  void onDeletePreset;
 
   function toggle<K extends keyof FilterState>(
     key: K,
@@ -1069,94 +1069,6 @@ function CalendarSidebar({
         onClear={() => setFilter((f) => ({ ...f, sources: [] }))}
       />
 
-      <Card className="!p-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-semibold inline-flex items-center gap-1">
-            <Star size={11} /> ตัวกรองที่บันทึก
-          </p>
-          <button
-            onClick={() => setSavePresetOpen((s) => !s)}
-            className="text-[10px] text-primary-600 hover:underline"
-          >
-            บันทึกปัจจุบัน
-          </button>
-        </div>
-        {savePresetOpen && (
-          <div className="mb-3 flex gap-1">
-            <Input
-              value={presetName}
-              onChange={(e) => setPresetName(e.target.value)}
-              placeholder="ชื่อ preset"
-              className="h-8 !text-[12px]"
-            />
-            <button
-              onClick={() => {
-                if (presetName.trim()) {
-                  onSavePreset(presetName.trim());
-                  setPresetName("");
-                  setSavePresetOpen(false);
-                }
-              }}
-              className="px-2 rounded-input bg-primary-600 text-white text-[11px]"
-            >
-              <Save size={12} />
-            </button>
-          </div>
-        )}
-        {presets.length === 0 ? (
-          <p className="text-[11px] text-ink-3">
-            ยังไม่มี preset — บันทึกตัวกรองปัจจุบันได้
-          </p>
-        ) : (
-          <ul className="space-y-1.5">
-            {presets.map((p) => (
-              <li
-                key={p.id}
-                className="flex items-center gap-1.5 group"
-              >
-                <button
-                  onClick={() => onApplyPreset(p)}
-                  className="flex-1 text-left px-2 py-1.5 rounded-input bg-surface-subtle/60 hover:bg-primary-50/50 text-xs"
-                >
-                  {p.name}
-                </button>
-                <button
-                  onClick={() => onDeletePreset(p.id)}
-                  className="text-ink-3 hover:text-red-600 opacity-0 group-hover:opacity-100"
-                  title="ลบ"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      <Card className="!p-4 bg-gradient-to-br from-primary-50 to-white">
-        <p className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-semibold mb-2">
-          คีย์ลัด
-        </p>
-        <ul className="text-[11px] text-ink-2 space-y-1 tabular-nums">
-          <li>
-            <kbd className="kbd">T</kbd> วันนี้ ·{" "}
-            <kbd className="kbd">N</kbd> ใหม่
-          </li>
-          <li>
-            <kbd className="kbd">D</kbd>/<kbd className="kbd">W</kbd>/
-            <kbd className="kbd">M</kbd>/<kbd className="kbd">Y</kbd>/
-            <kbd className="kbd">L</kbd> view
-          </li>
-          <li>
-            <kbd className="kbd">F</kbd> ตัวกรอง ·{" "}
-            <kbd className="kbd">P</kbd> พิมพ์
-          </li>
-          <li>
-            <kbd className="kbd">⌘K</kbd> ค้นหา ·{" "}
-            <kbd className="kbd">←→</kbd> เลื่อน
-          </li>
-        </ul>
-      </Card>
     </aside>
   );
 }
@@ -1386,7 +1298,7 @@ function DayView({
         ))}
       </div>
 
-      <div className="relative max-h-[640px] overflow-y-auto scrollbar-thin">
+      <div className="relative max-h-[calc(100vh-220px)] min-h-[640px] overflow-y-auto scrollbar-thin">
         {showNowIndicator && nowOffsetPx >= 0 && (
           <div
             className="absolute left-0 right-0 z-20 pointer-events-none"

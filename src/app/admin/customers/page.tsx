@@ -377,18 +377,18 @@ export default async function CustomersPage({
                             <ActionIcon
                               href={c.line_id ? `https://line.me/R/ti/p/${c.line_id}` : undefined}
                               tip="LINE"
-                              icon={MessageCircle}
+                              kind="line"
                               external
                             />
                             <ActionIcon
                               href={c.phone ? `tel:${c.phone}` : undefined}
                               tip="Call"
-                              icon={Phone}
+                              kind="call"
                             />
                             <ActionIcon
                               href={c.email ? `mailto:${c.email}` : undefined}
                               tip="Email"
-                              icon={Mail}
+                              kind="email"
                             />
                             <ArrowUpRight
                               size={14}

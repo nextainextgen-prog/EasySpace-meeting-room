@@ -16,6 +16,7 @@ import { requireAuth } from "@/lib/auth";
 import { getCurrentMember } from "@/lib/data/members";
 import { getOrgById } from "@/lib/data/organizations";
 import { formatDate } from "@/lib/format";
+import { ToggleRow } from "./_toggle-row";
 
 export const dynamic = "force-dynamic";
 
@@ -108,12 +109,12 @@ export default async function ProfilePage() {
           <ToggleRow
             label="Email reminder"
             description="24 ชม. ก่อน · 15 นาที ก่อนการประชุม"
-            on
+            defaultOn
           />
           <ToggleRow
             label="In-app notification"
             description="แจ้งเตือนผ่านระบบ"
-            on
+            defaultOn
           />
           <ToggleRow
             label="LINE notification"
@@ -135,17 +136,13 @@ export default async function ProfilePage() {
             </div>
           </div>
         </CardHeader>
-        <div className="space-y-3 text-sm">
+        <ul className="space-y-3 text-sm">
           <ToggleRow
             label="Google Calendar"
-            description="รอ Google OAuth credentials"
-            disabled
+            description="ซิงก์การจองเข้า Google Calendar อัตโนมัติ"
           />
           <ToggleRow label="Outlook" description="Phase 2" disabled />
-          <div className="rounded-input bg-surface-subtle px-4 py-3 text-xs text-ink-3">
-            หลังจาก admin ตึกเพิ่ม Google OAuth credentials ใน Vercel env แล้ว ระบบจะเปิด Calendar sync ให้ใช้งานอัตโนมัติ
-          </div>
-        </div>
+        </ul>
       </Card>
 
       <Card>
@@ -162,7 +159,7 @@ export default async function ProfilePage() {
           </Button>
         </form>
         <p className="mt-3 text-[11px] text-ink-3">
-          <Link href="/" className="text-primary-600">
+          <Link href="/app" className="text-primary-600">
             กลับสู่หน้าหลัก
           </Link>
         </p>
@@ -193,40 +190,3 @@ function Row({
   );
 }
 
-function ToggleRow({
-  label,
-  description,
-  on,
-  disabled,
-}: {
-  label: string;
-  description: string;
-  on?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <li className="flex items-center gap-3">
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium tracking-tight">{label}</p>
-        <p className="text-[11px] text-ink-3 mt-0.5">{description}</p>
-      </div>
-      <button
-        type="button"
-        disabled={disabled}
-        className={`relative w-11 h-6 rounded-pill transition ${
-          disabled
-            ? "bg-line cursor-not-allowed"
-            : on
-              ? "bg-primary-600"
-              : "bg-line"
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 w-5 h-5 rounded-pill bg-white shadow transition-transform ${
-            on && !disabled ? "translate-x-5" : "translate-x-0.5"
-          }`}
-        />
-      </button>
-    </li>
-  );
-}

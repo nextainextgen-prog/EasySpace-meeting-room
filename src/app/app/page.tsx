@@ -17,7 +17,7 @@ import { IconTile } from "@/components/ui/icon-tile";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { HeroCard } from "@/components/ui/hero-card";
 import { requireAuth } from "@/lib/auth";
-import { getCurrentMember } from "@/lib/data/members";
+import { getCurrentMember, listMembersByOrg } from "@/lib/data/members";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +31,8 @@ interface UpcomingBooking {
   attendees_count: number | null;
   booking_status: string;
   internal_title: string | null;
+  member_id: string | null;
+  created_by: string | null;
   room: { name: string } | null;
 }
 
@@ -42,23 +44,34 @@ export default async function MemberDashboard() {
   // bookings.member_id points at members.id (NOT auth.profile.id), so look
   // up the member row before filtering.
   const memberId = ctx?.member.id ?? null;
+  const orgId = ctx?.primaryOrgId ?? null;
+
+  // A booking "belongs to me" if any of these match. Both checks let us
+  // surface bookings that admin staff created on behalf of this member,
+  // and bookings that this member created before their members.id was wired.
+  const isMine = (b: { member_id: string | null; created_by: string | null }) =>
+    (memberId && b.member_id === memberId) || b.created_by === profile.id;
 
   const now = new Date().toISOString();
-  const { data: upcomingRaw } = memberId
+  // Pull a wider org-scoped window so the JS-side `isMine` filter has
+  // candidates to work with even if member_id was never populated.
+  const { data: upcomingRaw } = orgId
     ? await supabase
         .from("bookings")
         .select(
-          "id, starts_at, ends_at, attendees_count, booking_status, internal_title, room:rooms(name)",
+          "id, starts_at, ends_at, attendees_count, booking_status, internal_title, member_id, created_by, room:rooms(name)",
         )
         // "Upcoming" = anything not yet ended. Using starts_at would hide
         // bookings that already began today, which was the original bug.
         .gte("ends_at", now)
         .neq("booking_status", "cancelled")
-        .eq("member_id", memberId)
+        .eq("org_id", orgId)
         .order("starts_at")
-        .limit(5)
+        .limit(50)
     : { data: [] };
-  const upcoming = (upcomingRaw ?? []) as unknown as UpcomingBooking[];
+  const upcoming = ((upcomingRaw ?? []) as unknown as UpcomingBooking[])
+    .filter(isMine)
+    .slice(0, 5);
 
   // "This week" — bookings starting in the current ISO week, capped at 50.
   const weekStart = new Date(now);
@@ -66,37 +79,49 @@ export default async function MemberDashboard() {
   weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekStart.getDate() + 7);
-  const { count: weekCount } = memberId
+  const { data: weekRaw } = orgId
     ? await supabase
         .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("member_id", memberId)
+        .select("id, member_id, created_by")
+        .eq("org_id", orgId)
         .neq("booking_status", "cancelled")
         .gte("starts_at", weekStart.toISOString())
         .lt("starts_at", weekEnd.toISOString())
-    : { count: 0 };
+    : { data: [] };
+  const weekCount = (
+    (weekRaw ?? []) as Array<{ member_id: string | null; created_by: string | null }>
+  ).filter(isMine).length;
 
   // member quota lookup (Phase 1 simplification — flat 40 hrs)
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
-  const { data: monthBookings } = memberId
+  const { data: monthRaw } = orgId
     ? await supabase
         .from("bookings")
-        .select("starts_at, ends_at")
-        .eq("member_id", memberId)
+        .select("starts_at, ends_at, member_id, created_by")
+        .eq("org_id", orgId)
         .neq("booking_status", "cancelled")
         .gte("starts_at", monthStart.toISOString())
     : { data: [] };
-  const hoursUsed = (
-    (monthBookings ?? []) as Array<{ starts_at: string; ends_at: string }>
-  ).reduce((sum, b) => {
+  const monthBookings = (
+    (monthRaw ?? []) as Array<{
+      starts_at: string;
+      ends_at: string;
+      member_id: string | null;
+      created_by: string | null;
+    }>
+  ).filter(isMine);
+  const hoursUsed = monthBookings.reduce((sum, b) => {
     const diffHrs =
       (new Date(b.ends_at).getTime() - new Date(b.starts_at).getTime()) /
       3_600_000;
     return sum + diffHrs;
   }, 0);
   const quotaTotal = 40;
+
+  // Team size — count active members in the same org
+  const teamSize = orgId ? (await listMembersByOrg(orgId)).length : 0;
 
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-6 lg:p-8 space-y-5">
@@ -130,10 +155,14 @@ export default async function MemberDashboard() {
         />
         <KpiCard
           label="สัปดาห์นี้"
-          value={`${weekCount ?? 0} รายการ`}
+          value={`${weekCount} รายการ`}
           icon={Sparkles}
         />
-        <KpiCard label="ทีม" value="—" icon={Users} />
+        <KpiCard
+          label="ทีม"
+          value={teamSize > 0 ? `${teamSize} คน` : "—"}
+          icon={Users}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

@@ -105,6 +105,41 @@ export async function upsertOrganization(
   return { ok: true as const, id: input.id };
 }
 
+/** Hard-delete an organization plus its member links and settings. Returns
+ *  an error if bookings still reference the org_id (FK violation). */
+export async function deleteOrganization(id: string) {
+  const supabase = createSupabaseAdminClient();
+
+  // Best-effort cleanup of dependent rows. Failures here are non-fatal —
+  // the final org delete will surface any real FK issue.
+  await supabase.from("member_organizations").delete().eq("org_id", id);
+  await supabase.from("settings").delete().like("key", `org.${id}.%`);
+
+  const { error } = await supabase
+    .from("organizations")
+    .delete()
+    .eq("id", id);
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("foreign key") || msg.includes("violates"))
+      return {
+        ok: false as const,
+        error:
+          "ลบไม่ได้ — ยังมีการจองที่ผูกกับองค์กรนี้อยู่ ให้ยกเลิกหรือย้ายการจองก่อน",
+      };
+    return { ok: false as const, error: error.message };
+  }
+
+  await recordAudit({
+    action: "org_deleted",
+    targetType: "organization",
+    targetId: id,
+  });
+
+  revalidatePath("/admin/users");
+  return { ok: true as const };
+}
+
 export async function setOrgStatus(
   id: string,
   status: "active" | "pending" | "suspended" | "expired" | "archived",

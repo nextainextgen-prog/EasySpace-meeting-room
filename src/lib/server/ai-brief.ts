@@ -50,14 +50,34 @@ export async function generateDailyBrief(forDate = new Date()) {
 
   const prompt = `สรุปประจำวัน ${facts.date}\n${JSON.stringify(facts, null, 2)}`;
 
-  const ai = await geminiText(prompt, system);
+  // Gemini is best-effort. If the key is missing, rate-limited, or the
+  // network fails, we still want the daily Telegram brief to ship with
+  // raw numbers so the team isn't blind.
+  let ai: string;
+  try {
+    ai = (await geminiText(prompt, system)).trim();
+  } catch (err) {
+    console.error("[ai-brief] gemini failed, using factual fallback", err);
+    ai = [
+      `<b>สรุปวันนี้</b> (AI ใช้งานไม่ได้ชั่วคราว — แสดงตัวเลขดิบ)`,
+      `• การจอง: ${facts.bookings_today} รายการ`,
+      `• รายรับเข้าจริง: ${formatBaht(facts.revenue_paid)} จากยอดรวม ${formatBaht(facts.revenue_total)}`,
+      `• ค้างชำระ: ${facts.outstanding_count} รายการ · ${formatBaht(facts.outstanding_amount)}`,
+      `• ลูกค้าใหม่ 7 วัน: ${facts.new_customers_7d} ราย`,
+      facts.churn_high > 0
+        ? `• เสี่ยง churn สูง: ${facts.churn_high} ราย`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
 
   return {
     facts,
     text: [
       `<b>AI Daily Brief — ${facts.date}</b>`,
       "",
-      ai.trim(),
+      ai,
       "",
       "─────────────────────",
       `รายรับเข้าจริง: <b>${formatBaht(facts.revenue_paid)}</b>`,

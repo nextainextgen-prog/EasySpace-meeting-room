@@ -54,16 +54,12 @@ interface Props {
   promotions: Promo[];
 }
 
-const morningSlots = [
-  "08:30", "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
-];
-const afternoonSlots = [
-  "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00",
-];
-const eveningSlots = [
-  "17:00", "17:30", "18:00", "18:30", "19:00", "19:30",
-  "20:00", "20:30", "21:00", "21:30",
-];
+// Continuous 30-min slots from 07:00 to 21:30 (last slot ends 22:00)
+const TIME_SLOTS = Array.from({ length: 30 }, (_, i) => {
+  const h = 7 + Math.floor((i * 30) / 60);
+  const m = (i * 30) % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+});
 
 const customerTypes = [
   { id: "individual", label: "บุคคลธรรมดา" },
@@ -92,7 +88,7 @@ type PaymentStatus = (typeof paymentStatuses)[number]["id"];
 type Source = (typeof sources)[number]["id"];
 type CType = (typeof customerTypes)[number]["id"];
 
-const ALL_SLOTS = [...morningSlots, ...afternoonSlots, ...eveningSlots];
+const ALL_SLOTS = TIME_SLOTS;
 
 const DRAFT_KEY = "easyspace.booking-draft.v1";
 
@@ -810,6 +806,16 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
                   />
                 </div>
               </div>
+              <div>
+                <Label>จำนวนผู้เข้าประชุม</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={attendees}
+                  onChange={(e) => setAttendees(Number(e.target.value))}
+                  iconLeft={<Users size={16} />}
+                />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>ประเภท</Label>
@@ -967,35 +973,6 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
             )}
           </Card>
 
-          {/* DATE / ATTENDEES */}
-          <Card>
-            <CardHeader>
-              <CardTitle>วัน-เวลา</CardTitle>
-            </CardHeader>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>วันที่</Label>
-                <Input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label>จำนวนผู้เข้าประชุม</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={attendees}
-                  onChange={(e) => setAttendees(Number(e.target.value))}
-                  iconLeft={<Users size={16} />}
-                />
-              </div>
-            </div>
-            <p className="text-[11px] text-ink-3 mt-2">
-              เลือกช่วงเวลาทางขวา → ปฏิทินจะแสดงสถานะ slot แบบ real-time
-            </p>
-          </Card>
 
           {/* FINANCE */}
           <Card>
@@ -1204,43 +1181,31 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
           {/* Calendar with slot picker */}
           <Card>
             <CardHeader>
-              <CardTitle>
-                <span className="inline-flex items-center gap-2">
-                  <CalendarIcon size={16} className="text-primary-600" />
-                  ปฏิทิน {format(new Date(`${date}T00:00:00+07:00`), "d MMM yyyy")}
+              <div>
+                <CardTitle>
+                  <span className="inline-flex items-center gap-2">
+                    <CalendarIcon size={16} className="text-primary-600" />
+                    ปฏิทิน {format(new Date(`${date}T00:00:00+07:00`), "d MMM yyyy")}
+                  </span>
+                </CardTitle>
+                <span className="text-[11px] text-ink-3">
+                  {room?.name ?? "—"} · slot ละ 30 นาที
                 </span>
-              </CardTitle>
-              <span className="text-[11px] text-ink-3">
-                {room?.name ?? "—"} · slot ละ 30 นาที
-              </span>
+              </div>
+              <Input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="!h-9 !w-44"
+              />
             </CardHeader>
 
             <SlotLegend />
 
-            <div className="mt-4 space-y-4">
+            <div className="mt-4">
               <SlotPicker
-                title="รอบเช้า"
-                slots={morningSlots}
-                selected={selectedSlots}
-                bookedSet={bookedSlotSet}
-                hover={hoverSlot}
-                onHover={setHoverSlot}
-                onToggle={toggleSlot}
-                dayBookings={dayBookings}
-              />
-              <SlotPicker
-                title="รอบบ่าย"
-                slots={afternoonSlots}
-                selected={selectedSlots}
-                bookedSet={bookedSlotSet}
-                hover={hoverSlot}
-                onHover={setHoverSlot}
-                onToggle={toggleSlot}
-                dayBookings={dayBookings}
-              />
-              <SlotPicker
-                title="รอบพิเศษ (17:00–22:00)"
-                slots={eveningSlots}
+                title="ช่วงเวลา 07:00 – 22:00"
+                slots={TIME_SLOTS}
                 selected={selectedSlots}
                 bookedSet={bookedSlotSet}
                 hover={hoverSlot}

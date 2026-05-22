@@ -25,6 +25,7 @@ import {
   KeyRound,
   Copy,
   Check,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardSubtitle } from "@/components/ui/card";
@@ -49,6 +50,7 @@ import {
   setOrgStatus,
   broadcastToOrg,
   bulkImportMembers,
+  deleteOrganization,
 } from "@/lib/actions/organizations";
 
 type TabId = "admins" | "orgs" | "audit";
@@ -1017,6 +1019,17 @@ function OrgsTab({
     notify(r.ok ? "เปลี่ยนสถานะแล้ว" : `ไม่สำเร็จ: ${r.error}`);
   }
 
+  async function onDeleteOrg(id: string, name: string) {
+    if (
+      !confirm(
+        `ลบองค์กร "${name}" ถาวร?\n\nสมาชิกที่ผูกอยู่จะถูกตัดออกจากองค์กรนี้ (ไม่ลบบัญชีสมาชิก)\nการกระทำนี้ย้อนกลับไม่ได้`,
+      )
+    )
+      return;
+    const r = await deleteOrganization(id);
+    notify(r.ok ? "ลบองค์กรแล้ว" : `ไม่สำเร็จ: ${r.error}`);
+  }
+
   return (
     <>
       <div className="flex flex-wrap items-center gap-3">
@@ -1195,6 +1208,14 @@ function OrgsTab({
                         </button>
                       ),
                     )}
+                    <div className="h-px bg-line-soft" />
+                    <button
+                      onClick={() => onDeleteOrg(o.id, o.name)}
+                      className="block w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 size={11} className="inline mr-1" />
+                      ลบองค์กรถาวร
+                    </button>
                   </DropdownActions>
                 </div>
               </Card>

@@ -48,23 +48,30 @@ export function KpiCard({
       <div className="text-2xl md:text-[28px] font-bold tracking-tighter text-ink-1 tabular-nums">
         {value}
       </div>
-      {delta && (
-        <div
-          className={cn(
-            "mt-2 inline-flex items-center gap-1 text-xs font-medium",
-            trendClass,
-          )}
-        >
-          <Trend size={14} strokeWidth={2} />
-          {Math.abs(delta.value).toFixed(0)}%
-          {delta.suffix && (
-            <span className="text-ink-3 font-normal ml-1">{delta.suffix}</span>
-          )}
-        </div>
-      )}
-      {hint && !delta && (
-        <p className="mt-2 text-xs text-ink-3">{hint}</p>
-      )}
+      <div className="mt-2 min-h-[18px] text-xs">
+        {delta ? (
+          <div
+            className={cn(
+              "inline-flex items-center gap-1 font-medium",
+              trendClass,
+            )}
+          >
+            <Trend size={14} strokeWidth={2} />
+            {Math.abs(delta.value).toFixed(0)}%
+            {delta.suffix && (
+              <span className="text-ink-3 font-normal ml-1">
+                {delta.suffix}
+              </span>
+            )}
+          </div>
+        ) : hint ? (
+          <p className="text-ink-3">{hint}</p>
+        ) : (
+          <span className="invisible" aria-hidden>
+            &nbsp;
+          </span>
+        )}
+      </div>
     </button>
   );
 }
