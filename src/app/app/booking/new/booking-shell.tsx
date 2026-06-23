@@ -12,10 +12,11 @@ import {
   Plus,
   Mail,
   Users,
+  Repeat,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Textarea } from "@/components/ui/input";
+import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
@@ -62,6 +63,7 @@ interface Props {
     hoursThisMonth: number;
     quotaHoursMonthly: number;
     quotaPct: number;
+    quotaUnlimited: boolean;
     activeMembers: number;
     members: number;
   };
@@ -88,9 +90,102 @@ const EVENING = SLOTS.filter((s) => {
 
 const SLOT_HEIGHT = 32;
 
+type RecurrenceRule =
+  | "none"
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "yearly"
+  | "weekdays"
+  | "custom";
+
+const TH_WEEKDAY = [
+  "วันอาทิตย์",
+  "วันจันทร์",
+  "วันอังคาร",
+  "วันพุธ",
+  "วันพฤหัสบดี",
+  "วันศุกร์",
+  "วันเสาร์",
+];
+const TH_MONTH = [
+  "มกราคม",
+  "กุมภาพันธ์",
+  "มีนาคม",
+  "เมษายน",
+  "พฤษภาคม",
+  "มิถุนายน",
+  "กรกฎาคม",
+  "สิงหาคม",
+  "กันยายน",
+  "ตุลาคม",
+  "พฤศจิกายน",
+  "ธันวาคม",
+];
+
+/** Compute the ISO date strings for a recurrence series anchored at the
+ *  given starting date. `count` caps the series so we never expand to
+ *  thousands of rows. */
+function expandRecurrence(
+  startDateStr: string,
+  rule: RecurrenceRule,
+  count: number,
+): string[] {
+  if (rule === "none") return [startDateStr];
+  const start = new Date(`${startDateStr}T00:00:00+07:00`);
+  const dates: string[] = [];
+  const safeCount = Math.min(Math.max(1, count), 52);
+
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  if (rule === "weekdays") {
+    const d = new Date(start);
+    while (dates.length < safeCount) {
+      const dow = d.getDay();
+      if (dow >= 1 && dow <= 5) dates.push(fmt(d));
+      d.setDate(d.getDate() + 1);
+    }
+    return dates;
+  }
+
+  for (let i = 0; i < safeCount; i++) {
+    const d = new Date(start);
+    if (rule === "daily") d.setDate(d.getDate() + i);
+    else if (rule === "weekly") d.setDate(d.getDate() + i * 7);
+    else if (rule === "monthly") d.setMonth(d.getMonth() + i);
+    else if (rule === "yearly") d.setFullYear(d.getFullYear() + i);
+    else if (rule === "custom") d.setDate(d.getDate() + i * 7);
+    dates.push(fmt(d));
+  }
+  return dates;
+}
+
+function recurrenceLabels(date: string) {
+  const d = new Date(`${date}T00:00:00+07:00`);
+  const dow = TH_WEEKDAY[d.getDay()];
+  const day = d.getDate();
+  const month = TH_MONTH[d.getMonth()];
+  return {
+    none: "ไม่เกิดซ้ำ",
+    daily: "รายวัน",
+    weekly: `รายสัปดาห์ ใน ${dow}`,
+    monthly: `รายเดือน ใน วันที่ ${day}`,
+    yearly: `รายปี ในเดือน ${month} วันที่ ${day}`,
+    weekdays: "ทุกวันธรรมดา (จันทร์–ศุกร์)",
+    custom: "กำหนดเอง...",
+  } as Record<RecurrenceRule, string>;
+}
+
 function slotToMinutes(s: string) {
   const [h, m] = s.split(":").map(Number);
   return h * 60 + m;
+}
+
+function endOfSlot(slot: string) {
+  const [h, m] = slot.split(":").map(Number);
+  const total = h * 60 + m + 30;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
 function isoForDateSlot(date: string, slot: string) {
@@ -125,6 +220,8 @@ export function MemberBookingShell({
   const [notes, setNotes] = useState("");
   const [attendeeEmailInput, setAttendeeEmailInput] = useState("");
   const [attendeeEmails, setAttendeeEmails] = useState<string[]>([]);
+  const [recurrence, setRecurrence] = useState<RecurrenceRule>("none");
+  const [recurrenceCount, setRecurrenceCount] = useState(8);
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<
     | { kind: "success"; reference: string; bookingId: string }
@@ -238,6 +335,9 @@ export function MemberBookingShell({
     const endDate = new Date(`${date}T00:00:00+07:00`);
     endDate.setHours(lh, lm + 30, 0, 0);
 
+    const startHour = Number(sorted[0].split(":")[0]);
+    const startMinute = Number(sorted[0].split(":")[1]);
+
     startTransition(async () => {
       const res = await createMemberBooking(
         {
@@ -250,6 +350,16 @@ export function MemberBookingShell({
           isPublic,
           notes: notes || undefined,
           attendeeEmails,
+          recurrence:
+            recurrence === "none"
+              ? undefined
+              : {
+                  rule: recurrence,
+                  count: recurrenceCount,
+                  startHour,
+                  startMinute,
+                  durationMin: selectedSlots.length * 30,
+                },
         },
         { memberId, orgId },
       );
@@ -271,7 +381,11 @@ export function MemberBookingShell({
         bookingId: res.bookingId,
       });
       // Bounce to My Bookings so the user immediately sees the new entry.
-      router.push(`/app/my-bookings?created=${res.reference}`);
+      const extra =
+        res.recurrenceCreated && res.recurrenceCreated > 1
+          ? `&recurring=${res.recurrenceCreated}${res.recurrenceSkipped ? `&skipped=${res.recurrenceSkipped}` : ""}`
+          : "";
+      router.push(`/app/my-bookings?created=${res.reference}${extra}`);
       router.refresh();
     });
   }
@@ -292,11 +406,23 @@ export function MemberBookingShell({
             {org?.short_name ?? org?.name ?? "องค์กร"}
           </Badge>
           <div className="ml-auto text-[11px] text-ink-3">
-            ใช้โควต้า{" "}
-            <b className="text-ink-1 tabular-nums">
-              {usage.hoursThisMonth}/{usage.quotaHoursMonthly} ชม.
-            </b>{" "}
-            ({usage.quotaPct}%)
+            {usage.quotaUnlimited ? (
+              <>
+                ใช้โควต้า{" "}
+                <b className="text-ink-1 tabular-nums">
+                  {usage.hoursThisMonth} ชม.
+                </b>{" "}
+                · <span className="text-emerald-700 font-medium">ไม่จำกัด</span>
+              </>
+            ) : (
+              <>
+                ใช้โควต้า{" "}
+                <b className="text-ink-1 tabular-nums">
+                  {usage.hoursThisMonth}/{usage.quotaHoursMonthly} ชม.
+                </b>{" "}
+                ({usage.quotaPct}%)
+              </>
+            )}
           </div>
         </div>
 
@@ -389,8 +515,10 @@ export function MemberBookingShell({
             <div>
               <Label>ช่วงเวลา</Label>
               <p className="text-[11px] text-ink-3 mb-2">
-                สีแดงคือมีการจองแล้ว · แตะ slot ว่างเพื่อเลือก (คลิกอีก slot
-                เพื่อเลือกเป็นช่วง)
+                แต่ละช่อง = 30 นาที (เช่น คลิก{" "}
+                <b className="text-ink-2">11:00</b> = จอง{" "}
+                <b className="text-ink-2">11:00–11:30</b>) · คลิกหลายช่องเพื่อเลือกเป็นช่วง ·
+                สีแดงคือถูกจองแล้ว
               </p>
               <SlotGroup
                 title="รอบเช้า"
@@ -420,6 +548,75 @@ export function MemberBookingShell({
                 เลือก <b>{summary.range}</b> · {summary.hours} ชม.
               </div>
             )}
+
+            {/* ── การจองซ้ำ ── (members only) ─────────────────────────── */}
+            <div className="border-t border-line-soft pt-4">
+              <Label>
+                <span className="inline-flex items-center gap-1.5">
+                  <Repeat size={12} /> จองซ้ำ
+                </span>
+              </Label>
+              <Select
+                value={recurrence}
+                onChange={(e) =>
+                  setRecurrence(e.target.value as RecurrenceRule)
+                }
+              >
+                {(
+                  [
+                    "none",
+                    "daily",
+                    "weekly",
+                    "monthly",
+                    "yearly",
+                    "weekdays",
+                    "custom",
+                  ] as RecurrenceRule[]
+                ).map((r) => (
+                  <option key={r} value={r}>
+                    {recurrenceLabels(date)[r]}
+                  </option>
+                ))}
+              </Select>
+              {recurrence !== "none" && (
+                <div className="mt-2.5 space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>จำนวนครั้งที่จอง</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={52}
+                        value={recurrenceCount}
+                        onChange={(e) =>
+                          setRecurrenceCount(
+                            Math.max(1, Math.min(52, Number(e.target.value) || 1)),
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="text-[11px] text-ink-3 self-end pb-2.5">
+                      ระบบจะข้ามวันที่ห้องไม่ว่าง · สูงสุด 52 ครั้ง
+                    </div>
+                  </div>
+                  {summary.hours > 0 && (
+                    <p className="text-[11px] text-primary-700 bg-primary-50/60 border border-primary-100 rounded-input px-3 py-2">
+                      <b>ดูตัวอย่าง:</b>{" "}
+                      {expandRecurrence(date, recurrence, recurrenceCount)
+                        .slice(0, 4)
+                        .map((d) =>
+                          new Date(`${d}T00:00:00+07:00`).toLocaleDateString(
+                            "th-TH",
+                            { day: "numeric", month: "short" },
+                          ),
+                        )
+                        .join(" · ")}
+                      {recurrenceCount > 4 && ` · +${recurrenceCount - 4}`}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </Card>
 
@@ -682,16 +879,27 @@ function SlotGroup({
               disabled={isTaken}
               onClick={() => onToggle(slot)}
               className={cn(
-                "h-9 rounded-input text-xs font-medium tabular-nums transition border",
+                "h-11 rounded-input text-xs font-medium tabular-nums transition border flex flex-col items-center justify-center leading-tight",
                 isTaken
                   ? "bg-red-50 border-red-200 text-red-500 line-through cursor-not-allowed"
                   : isSelected
                     ? "bg-primary-600 text-white border-primary-600 shadow-card"
                     : "bg-white border-line text-ink-2 hover:border-primary-300",
               )}
-              title={isTaken ? "มีการจองแล้ว" : undefined}
+              title={
+                isTaken
+                  ? "มีการจองแล้ว"
+                  : `${slot} – ${endOfSlot(slot)} (30 นาที)`
+              }
             >
-              {slot}
+              <span
+                className={cn(
+                  "text-[11px] font-semibold leading-none tracking-tight",
+                  isTaken && "line-through",
+                )}
+              >
+                {slot}-{endOfSlot(slot)}
+              </span>
             </button>
           );
         })}

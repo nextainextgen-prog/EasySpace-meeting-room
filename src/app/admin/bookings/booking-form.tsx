@@ -129,6 +129,10 @@ function endSlotLabel(lastSlot: string | undefined) {
   return `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
 }
 
+function endOfSlot(slot: string) {
+  return endSlotLabel(slot);
+}
+
 function computePromoDiscount(
   promo: Promo | undefined,
   subtotal: number,
@@ -220,7 +224,10 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
       starts_at: string;
       ends_at: string;
       booking_status: string;
+      source: string;
       customer_name: string | null;
+      member_name: string | null;
+      org_name: string | null;
     }>
   >([]);
 
@@ -1215,50 +1222,77 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
               />
             </div>
 
-            {/* Day's bookings list */}
+            {/* Day's bookings list — includes completed ones too */}
             {dayBookings.length > 0 && (
               <div className="mt-5 pt-4 border-t border-line-soft">
                 <p className="text-[11px] uppercase tracking-[0.06em] text-ink-3 mb-2">
                   การจองในวันนี้ ({dayBookings.length})
                 </p>
                 <div className="space-y-1.5">
-                  {dayBookings.map((b) => (
-                    <div
-                      key={b.id}
-                      className="flex items-center gap-3 px-3 py-2 rounded-input bg-surface-subtle/60 border border-line-soft text-xs"
-                    >
-                      <span
+                  {dayBookings.map((b) => {
+                    const isPast = new Date(b.ends_at).getTime() < Date.now();
+                    const isCompleted = b.booking_status === "completed";
+                    const isInternal = b.source === "internal";
+                    const name =
+                      b.customer_name ??
+                      b.member_name ??
+                      (isInternal ? "สมาชิกองค์กร" : "—");
+                    return (
+                      <div
+                        key={b.id}
                         className={cn(
-                          "w-1.5 h-1.5 rounded-full shrink-0",
-                          b.booking_status === "in_use"
-                            ? "bg-amber-500"
-                            : "bg-slate-400",
+                          "flex items-center gap-3 px-3 py-2 rounded-input border text-xs",
+                          isCompleted || (isPast && b.booking_status !== "in_use")
+                            ? "bg-surface-subtle/30 border-line-soft opacity-70"
+                            : "bg-surface-subtle/60 border-line-soft",
                         )}
-                      />
-                      <code className="font-mono font-semibold text-ink-2">
-                        {b.reference_code}
-                      </code>
-                      <span className="tabular-nums text-ink-2">
-                        {format(new Date(b.starts_at), "HH:mm")}–
-                        {format(new Date(b.ends_at), "HH:mm")}
-                      </span>
-                      <span className="text-ink-3 truncate flex-1">
-                        {b.customer_name ?? "—"}
-                      </span>
-                      <Badge
-                        tone={
-                          b.booking_status === "in_use"
-                            ? "warning"
-                            : "primary"
-                        }
-                        className="!text-[10px]"
                       >
-                        {b.booking_status === "in_use"
-                          ? "กำลังใช้"
-                          : "จองแล้ว"}
-                      </Badge>
-                    </div>
-                  ))}
+                        <span
+                          className={cn(
+                            "w-1.5 h-1.5 rounded-full shrink-0",
+                            b.booking_status === "in_use"
+                              ? "bg-amber-500"
+                              : b.booking_status === "completed"
+                                ? "bg-emerald-500"
+                                : "bg-slate-400",
+                          )}
+                        />
+                        <code className="font-mono font-semibold text-ink-2">
+                          {b.reference_code}
+                        </code>
+                        <span className="tabular-nums text-ink-2">
+                          {format(new Date(b.starts_at), "HH:mm")}–
+                          {format(new Date(b.ends_at), "HH:mm")}
+                        </span>
+                        <span className="text-ink-2 truncate flex-1">
+                          {name}
+                          {b.org_name && (
+                            <span className="text-primary-700 ml-1.5 font-medium">
+                              · {b.org_name}
+                            </span>
+                          )}
+                        </span>
+                        <Badge
+                          tone={
+                            b.booking_status === "in_use"
+                              ? "warning"
+                              : b.booking_status === "completed"
+                                ? "muted"
+                                : "primary"
+                          }
+                          className="!text-[10px]"
+                        >
+                          {b.booking_status === "in_use"
+                            ? "กำลังใช้"
+                            : b.booking_status === "completed"
+                              ? "เสร็จสิ้น"
+                              : isPast
+                                ? "ผ่านมาแล้ว"
+                                : "จองแล้ว"}
+                        </Badge>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1679,9 +1713,16 @@ function SlotPicker({
 
   return (
     <div>
-      <p className="text-[11px] text-ink-3 uppercase tracking-[0.06em] mb-2">
-        {title}
-      </p>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[11px] text-ink-3 uppercase tracking-[0.06em]">
+          {title}
+        </p>
+        <p className="text-[10px] text-ink-3">
+          แต่ละช่อง = 30 นาที · คลิก{" "}
+          <b className="text-ink-2">11:00</b> = จอง{" "}
+          <b className="text-ink-2">11:00–11:30</b>
+        </p>
+      </div>
       <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5">
         {slots.map((slot) => {
           const status = statusForSlot(slot);
@@ -1695,13 +1736,13 @@ function SlotPicker({
               onMouseLeave={() => onHover(null)}
               onClick={() => onToggle(slot)}
               className={cn(
-                "h-9 rounded-input text-xs font-medium tabular-nums transition border relative",
+                "h-11 rounded-input text-xs font-medium tabular-nums transition border relative flex flex-col items-center justify-center leading-tight",
                 status === "picked" &&
                   "bg-primary-600 text-white border-primary-600 shadow-card",
                 status === "picking" &&
                   "bg-primary-100 text-primary-700 border-primary-300",
                 status === "booked" &&
-                  "bg-red-100 text-red-700 border-red-200 cursor-not-allowed line-through",
+                  "bg-red-100 text-red-700 border-red-200 cursor-not-allowed",
                 status === "in-use" &&
                   "bg-amber-100 text-amber-800 border-amber-300 cursor-not-allowed",
                 status === "free" &&
@@ -1712,10 +1753,17 @@ function SlotPicker({
                   ? status === "in-use"
                     ? "กำลังใช้งานอยู่"
                     : "ถูกจองแล้ว"
-                  : slot
+                  : `${slot} – ${endOfSlot(slot)} (30 นาที)`
               }
             >
-              {slot}
+              <span
+                className={cn(
+                  "text-[11px] font-semibold leading-none tracking-tight",
+                  status === "booked" && "line-through",
+                )}
+              >
+                {slot}-{endOfSlot(slot)}
+              </span>
             </button>
           );
         })}
