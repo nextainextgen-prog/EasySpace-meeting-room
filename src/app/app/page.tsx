@@ -18,6 +18,7 @@ import { KpiCard } from "@/components/ui/kpi-card";
 import { HeroCard } from "@/components/ui/hero-card";
 import { requireAuth } from "@/lib/auth";
 import { getCurrentMember, listMembersByOrg } from "@/lib/data/members";
+import { getOrgUsage } from "@/lib/data/organizations";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -92,7 +93,7 @@ export default async function MemberDashboard() {
     (weekRaw ?? []) as Array<{ member_id: string | null; created_by: string | null }>
   ).filter(isMine).length;
 
-  // member quota lookup (Phase 1 simplification — flat 40 hrs)
+  // member quota lookup — admin-set limits live in settings.org.<id>.meta
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
@@ -118,7 +119,9 @@ export default async function MemberDashboard() {
       3_600_000;
     return sum + diffHrs;
   }, 0);
-  const quotaTotal = 40;
+  const orgUsage = orgId ? await getOrgUsage(orgId) : null;
+  const quotaTotal = orgUsage?.quotaHoursMonthly ?? 40;
+  const quotaUnlimited = orgUsage?.quotaUnlimited ?? false;
 
   // Team size — count active members in the same org
   const teamSize = orgId ? (await listMembersByOrg(orgId)).length : 0;
@@ -138,8 +141,17 @@ export default async function MemberDashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <KpiCard
-          label="Quota เดือนนี้"
-          value={`${hoursUsed.toFixed(1)}/${quotaTotal} ชม.`}
+          label="โควต้าเดือนนี้"
+          value={
+            quotaUnlimited
+              ? `${(orgUsage?.hoursThisMonth ?? 0).toFixed(1)} ชม.`
+              : `${(orgUsage?.hoursThisMonth ?? 0).toFixed(1)}/${quotaTotal} ชม.`
+          }
+          hint={
+            quotaUnlimited
+              ? `ไม่จำกัด · ทีมใช้รวม (คุณ ${hoursUsed.toFixed(1)} ชม.)`
+              : `ทีมใช้รวม · คุณ ${hoursUsed.toFixed(1)} ชม.`
+          }
           icon={Clock}
         />
         <KpiCard

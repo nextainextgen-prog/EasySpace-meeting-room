@@ -1,15 +1,28 @@
-import { Resend } from 'resend';
+import nodemailer, { type Transporter } from 'nodemailer';
 
-const apiKey = process.env.RESEND_API_KEY;
+const GMAIL_USER = process.env.GMAIL_USER;
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 
-if (!apiKey) {
-  console.warn('[email] RESEND_API_KEY is not set');
+if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
+  console.warn('[email] GMAIL_USER or GMAIL_APP_PASSWORD is not set');
 }
 
-export const resend = new Resend(apiKey);
+let transporter: Transporter | null = null;
+function getTransporter(): Transporter | null {
+  if (!GMAIL_USER || !GMAIL_APP_PASSWORD) return null;
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
+    });
+  }
+  return transporter;
+}
 
 const FROM_NAME = process.env.EMAIL_FROM_NAME ?? 'EasySpace';
-const FROM_ADDRESS = process.env.EMAIL_FROM ?? 'onboarding@resend.dev';
+const FROM_ADDRESS = process.env.EMAIL_FROM ?? GMAIL_USER ?? '';
 export const DEFAULT_FROM = `${FROM_NAME} <${FROM_ADDRESS}>`;
 
 export type SendEmailInput = {
@@ -21,20 +34,27 @@ export type SendEmailInput = {
 };
 
 export async function sendEmail({ to, subject, html, text, replyTo }: SendEmailInput) {
-  const { data, error } = await resend.emails.send({
-    from: DEFAULT_FROM,
-    to: Array.isArray(to) ? to : [to],
-    subject,
-    html,
-    text,
-    replyTo,
-  });
-
-  if (error) {
-    throw new Error(`Resend error: ${error.message}`);
+  const t = getTransporter();
+  if (!t) {
+    throw new Error('Gmail SMTP not configured (GMAIL_USER + GMAIL_APP_PASSWORD)');
   }
-
-  return data;
+  const recipients = Array.isArray(to) ? to : [to];
+  console.log(`[email] sending → ${recipients.join(', ')} subject="${subject}"`);
+  try {
+    const info = await t.sendMail({
+      from: DEFAULT_FROM,
+      to: recipients,
+      subject,
+      html,
+      text,
+      replyTo,
+    });
+    console.log(`[email] sent ok id=${info.messageId} accepted=${info.accepted?.length}/${recipients.length}`);
+    return { id: info.messageId };
+  } catch (e) {
+    console.error('[email] send failed:', (e as Error).message);
+    throw e;
+  }
 }
 
 export function bookingConfirmationEmail(params: {

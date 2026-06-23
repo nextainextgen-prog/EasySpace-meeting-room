@@ -254,7 +254,19 @@ function Header({
   const b = detail.booking as unknown as Record<string, unknown>;
   const customer = (b.customer ?? {}) as Record<string, unknown>;
   const room = (b.room ?? {}) as Record<string, unknown>;
+  const member = (b.member ?? null) as Record<string, unknown> | null;
+  const org = (b.org ?? null) as Record<string, unknown> | null;
   const status = (b.payment_status as string) ?? "unpaid";
+  const headerName =
+    (customer.display_name as string) ??
+    (member?.full_name as string) ??
+    (b.internal_title as string) ??
+    "—";
+  const headerSub = org
+    ? `${(org.short_name as string) ?? (org.name as string)} · สมาชิก`
+    : (b.source as string) === "internal"
+      ? "จองภายใน"
+      : null;
 
   return (
     <div className="p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start gap-3">
@@ -288,9 +300,12 @@ function Header({
             </span>
           )}
         </div>
-        <p className="font-bold tracking-tight text-lg">
-          {(customer.display_name as string) ?? "—"}
-        </p>
+        <p className="font-bold tracking-tight text-lg">{headerName}</p>
+        {headerSub && (
+          <p className="text-[11px] text-primary-700 font-medium mt-0.5">
+            {headerSub}
+          </p>
+        )}
         <p className="text-xs text-ink-3 mt-0.5">
           {(room.name as string) ?? "—"} ·{" "}
           {new Date(b.starts_at as string).toLocaleString("th-TH", {
@@ -328,6 +343,11 @@ function InfoTab({
   const customer = (b.customer ?? {}) as Record<string, unknown>;
   const room = (b.room ?? {}) as Record<string, unknown>;
   const pkg = (b.package ?? null) as Record<string, unknown> | null;
+  const member = (b.member ?? null) as Record<string, unknown> | null;
+  const org = (b.org ?? null) as Record<string, unknown> | null;
+  const department = (b.department as string | null) ?? null;
+  const memberTier = (b.member_tier as string | null) ?? null;
+  const isInternal = (b.source as string) === "internal";
   const addons = detail.addons as Array<{
     addon: { name: string } | null;
     quantity: number;
@@ -379,15 +399,81 @@ function InfoTab({
         onChanged={(patch) => onSaved(patch)}
       />
 
+      {isInternal && (member || org) && (
+        <div className="rounded-input bg-primary-50/60 border border-primary-100 p-3">
+          <p className="text-[10px] uppercase tracking-[0.06em] text-primary-700 font-semibold mb-2">
+            ผู้จอง (สมาชิกองค์กร)
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {member && (
+              <>
+                <Info
+                  label="ชื่อสมาชิก"
+                  value={(member.full_name as string) ?? "—"}
+                />
+                <Info
+                  label="ตำแหน่ง"
+                  value={(member.position as string) ?? "—"}
+                />
+                <Info label="แผนก" value={department ?? "—"} />
+                <Info
+                  label="ระดับสิทธิ์"
+                  value={
+                    memberTier === "manager"
+                      ? "ผู้จัดการ"
+                      : memberTier === "guest"
+                        ? "Guest"
+                        : memberTier === "member"
+                          ? "สมาชิก"
+                          : "—"
+                  }
+                />
+                <Info
+                  label="Email"
+                  value={(member.email as string) ?? "—"}
+                />
+                <Info
+                  label="เบอร์"
+                  value={(member.phone as string) ?? "—"}
+                />
+              </>
+            )}
+            {org && (
+              <>
+                <Info
+                  label="องค์กร"
+                  value={(org.name as string) ?? "—"}
+                />
+                <Info
+                  label="ชื่อย่อ"
+                  value={(org.short_name as string) ?? "—"}
+                />
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
-        <Info label="ลูกค้า" value={(customer.display_name as string) ?? "—"} />
+        <Info
+          label={isInternal ? "ลูกค้า (ไม่มี — จองภายใน)" : "ลูกค้า"}
+          value={
+            (customer.display_name as string) ??
+            (member?.full_name as string) ??
+            "—"
+          }
+        />
         <Info
           label="เบอร์"
-          value={(customer.phone as string) ?? "—"}
+          value={
+            (customer.phone as string) ?? (member?.phone as string) ?? "—"
+          }
         />
         <Info
           label="Email"
-          value={(customer.email as string) ?? "—"}
+          value={
+            (customer.email as string) ?? (member?.email as string) ?? "—"
+          }
         />
         <Info
           label="ห้อง"

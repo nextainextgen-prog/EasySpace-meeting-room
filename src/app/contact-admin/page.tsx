@@ -30,20 +30,20 @@ export default function ContactAdminPage() {
             <ContactItem
               icon={<Mail size={18} strokeWidth={1.75} />}
               label="Email"
-              value="admin@easyspace.co.th"
-              href="mailto:admin@easyspace.co.th"
+              value="easyspace.kkc@gmail.com"
+              href="mailto:easyspace.kkc@gmail.com"
             />
             <ContactItem
               icon={<Phone size={18} strokeWidth={1.75} />}
               label="โทรศัพท์"
-              value="02-555-0000"
-              href="tel:0255550000"
+              value="093-388-3555"
+              href="tel:0933883555"
             />
             <ContactItem
               icon={<MessageCircle size={18} strokeWidth={1.75} />}
               label="LINE Official"
               value="@easyspace"
-              href="https://line.me/R/ti/p/@easyspace"
+              href="https://lin.ee/UXh4vjD"
             />
           </ul>
 

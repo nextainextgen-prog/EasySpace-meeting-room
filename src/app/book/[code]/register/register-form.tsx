@@ -11,15 +11,16 @@ import { cn } from "@/lib/cn";
 interface Props {
   inviteCode: string;
   allowedDomains: string[];
+  initialEmail?: string;
 }
 
 const REGISTER_COOKIE = "easyspace.register_intent";
 
-export function RegisterForm({ inviteCode, allowedDomains }: Props) {
+export function RegisterForm({ inviteCode, allowedDomains, initialEmail = "" }: Props) {
   const router = useRouter();
   const [position, setPosition] = useState("");
   const [department, setDepartment] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [pending, startTransition] = useTransition();
   const [oauthPending, setOauthPending] = useState(false);
   const [feedback, setFeedback] = useState<
@@ -122,10 +123,12 @@ export function RegisterForm({ inviteCode, allowedDomains }: Props) {
         return;
       }
       setFeedback({ kind: "success" });
+      // Send them back to the org's /book/<code> landing — never the generic
+      // /member-login page (admin-style URL).
       setTimeout(
         () =>
           router.push(
-            `/member-login?registered=1&invite=${encodeURIComponent(inviteCode)}`,
+            `/book/${encodeURIComponent(inviteCode)}?registered=1`,
           ),
         800,
       );

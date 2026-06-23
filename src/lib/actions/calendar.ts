@@ -130,54 +130,90 @@ export async function getBookingDetail(id: string) {
   // — a single failure does not block the rest. Joins are intentionally NOT
   // nested via PostgREST embeds because `bookings.promotion_id` has no FK
   // constraint (init.sql:252), which would break the embedded query.
-  const [customerRes, roomRes, packageRes, promotionRes, paymentsRes, auditRes, addonsRes] =
-    await Promise.all([
-      b.customer_id
-        ? supabase
-            .from("customers")
-            .select(
-              "id, display_name, phone, email, type, tags, total_bookings, total_spent",
-            )
-            .eq("id", b.customer_id as string)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      supabase
-        .from("rooms")
-        .select("*")
-        .eq("id", b.room_id as string)
-        .maybeSingle(),
-      b.package_id
-        ? supabase
-            .from("room_packages")
-            .select("id, name, hours, price")
-            .eq("id", b.package_id as string)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      b.promotion_id
-        ? supabase
-            .from("promotions")
-            .select("id, name, code")
-            .eq("id", b.promotion_id as string)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      supabase
-        .from("booking_payments")
-        .select(
-          "id, paid_at, amount, method, reference, slip_url, notes, recorded_by",
-        )
-        .eq("booking_id", id)
-        .order("paid_at", { ascending: false }),
-      supabase
-        .from("booking_audit_log")
-        .select("id, created_at, action, actor_name, changes, reason")
-        .eq("booking_id", id)
-        .order("created_at", { ascending: false })
-        .limit(50),
-      supabase
-        .from("booking_addons")
-        .select("addon_id, quantity, unit_price, addon:addons(name)")
-        .eq("booking_id", id),
-    ]);
+  const [
+    customerRes,
+    roomRes,
+    packageRes,
+    promotionRes,
+    paymentsRes,
+    auditRes,
+    addonsRes,
+    memberRes,
+    orgRes,
+    memberOrgRes,
+  ] = await Promise.all([
+    b.customer_id
+      ? supabase
+          .from("customers")
+          .select(
+            "id, display_name, phone, email, type, tags, total_bookings, total_spent",
+          )
+          .eq("id", b.customer_id as string)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("rooms")
+      .select("*")
+      .eq("id", b.room_id as string)
+      .maybeSingle(),
+    b.package_id
+      ? supabase
+          .from("room_packages")
+          .select("id, name, hours, price")
+          .eq("id", b.package_id as string)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    b.promotion_id
+      ? supabase
+          .from("promotions")
+          .select("id, name, code")
+          .eq("id", b.promotion_id as string)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("booking_payments")
+      .select(
+        "id, paid_at, amount, method, reference, slip_url, notes, recorded_by",
+      )
+      .eq("booking_id", id)
+      .order("paid_at", { ascending: false }),
+    supabase
+      .from("booking_audit_log")
+      .select("id, created_at, action, actor_name, changes, reason")
+      .eq("booking_id", id)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabase
+      .from("booking_addons")
+      .select("addon_id, quantity, unit_price, addon:addons(name)")
+      .eq("booking_id", id),
+    b.member_id
+      ? supabase
+          .from("members")
+          .select("id, full_name, email, phone, position")
+          .eq("id", b.member_id as string)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    b.org_id
+      ? supabase
+          .from("organizations")
+          .select("id, name, short_name, contact_email, contact_phone")
+          .eq("id", b.org_id as string)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    b.member_id && b.org_id
+      ? supabase
+          .from("member_organizations")
+          .select("tier, department:departments(name)")
+          .eq("member_id", b.member_id as string)
+          .eq("org_id", b.org_id as string)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const memberOrg = (memberOrgRes?.data ?? null) as
+    | { tier: string | null; department: { name: string } | null }
+    | null;
 
   const booking = {
     ...b,
@@ -185,6 +221,10 @@ export async function getBookingDetail(id: string) {
     room: roomRes.data ?? null,
     package: packageRes.data ?? null,
     promotion: promotionRes.data ?? null,
+    member: memberRes.data ?? null,
+    org: orgRes.data ?? null,
+    department: memberOrg?.department?.name ?? null,
+    member_tier: memberOrg?.tier ?? null,
   } as Record<string, unknown>;
 
   return {

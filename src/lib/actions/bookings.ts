@@ -100,19 +100,24 @@ export async function listDayBookings(input: {
     ends_at: string;
     booking_status: string;
     customer_name: string | null;
+    member_name: string | null;
+    org_name: string | null;
+    source: string;
   }>
 > {
   if (!input.roomId || !input.date) return [];
   const supabase = createSupabaseAdminClient();
   const dayStart = new Date(`${input.date}T00:00:00+07:00`).toISOString();
   const dayEnd = new Date(`${input.date}T23:59:59+07:00`).toISOString();
+  // Include "completed" so today's past finished bookings still show up — admin
+  // wants to see the full day, not just the upcoming/active ones.
   const { data } = await supabase
     .from("bookings")
     .select(
-      "id, reference_code, starts_at, ends_at, booking_status, customer:customers(display_name)",
+      "id, reference_code, starts_at, ends_at, booking_status, source, customer:customers(display_name), member:members(full_name), org:organizations(name, short_name)",
     )
     .eq("room_id", input.roomId)
-    .in("booking_status", ["pending", "confirmed", "in_use"])
+    .in("booking_status", ["pending", "confirmed", "in_use", "completed"])
     .gte("starts_at", dayStart)
     .lte("starts_at", dayEnd)
     .order("starts_at");
@@ -122,14 +127,20 @@ export async function listDayBookings(input: {
     starts_at: string;
     ends_at: string;
     booking_status: string;
+    source: string;
     customer: { display_name: string } | null;
+    member: { full_name: string } | null;
+    org: { name: string; short_name: string | null } | null;
   }>).map((b) => ({
     id: b.id,
     reference_code: b.reference_code,
     starts_at: b.starts_at,
     ends_at: b.ends_at,
     booking_status: b.booking_status,
+    source: b.source,
     customer_name: b.customer?.display_name ?? null,
+    member_name: b.member?.full_name ?? null,
+    org_name: b.org?.short_name ?? b.org?.name ?? null,
   }));
 }
 

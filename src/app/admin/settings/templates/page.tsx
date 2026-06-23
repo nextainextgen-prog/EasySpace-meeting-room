@@ -13,14 +13,39 @@ const TELEGRAM_TEMPLATES = [
     event: "booking.created",
   },
   {
-    fn: "paymentRecordedTemplate",
-    label: "บันทึกการชำระเงิน",
-    event: "payment.paid / deposit",
+    fn: "bookingUpdatedTemplate",
+    label: "แก้ไขการจอง (drag-drop / เลื่อนเวลา)",
+    event: "booking.updated",
   },
   {
     fn: "bookingCancelledTemplate",
     label: "ยกเลิกการจอง",
     event: "booking.cancelled",
+  },
+  {
+    fn: "adminRevokedBookingTemplate",
+    label: "Admin คืนห้อง (Revoke)",
+    event: "booking.cancelled",
+  },
+  {
+    fn: "paymentRecordedTemplate",
+    label: "บันทึกการชำระเงิน",
+    event: "payment.paid / deposit",
+  },
+  {
+    fn: "paymentFreeTemplate",
+    label: "บันทึกการจองฟรี",
+    event: "payment.free",
+  },
+  {
+    fn: "paymentRefundTemplate",
+    label: "คืนเงิน (Refund)",
+    event: "payment.refund",
+  },
+  {
+    fn: "expenseRecordedTemplate",
+    label: "บันทึกรายจ่าย",
+    event: "notification.system",
   },
   {
     fn: "bookingStartingSoonTemplate",
@@ -45,8 +70,23 @@ const TELEGRAM_TEMPLATES = [
   },
   {
     fn: "dailyDigestTemplate",
-    label: "Daily Brief",
+    label: "AI Daily Brief (เย็น 19:00)",
     event: "finance.daily_brief",
+  },
+  {
+    fn: "morningBriefTemplate",
+    label: "AI Morning Brief (เช้า 08:00)",
+    event: "finance.daily_brief",
+  },
+  {
+    fn: "weeklyDigestTemplate",
+    label: "สรุปสัปดาห์ (จันทร์ 09:00)",
+    event: "finance.weekly_summary",
+  },
+  {
+    fn: "weeklyInsightTemplate",
+    label: "AI Insight รายสัปดาห์",
+    event: "finance.weekly_summary",
   },
   {
     fn: "memberJoinedTemplate",
@@ -54,9 +94,29 @@ const TELEGRAM_TEMPLATES = [
     event: "internal.member_joined",
   },
   {
+    fn: "memberFirstBookingTemplate",
+    label: "สมาชิกจองครั้งแรก",
+    event: "internal.member_joined",
+  },
+  {
+    fn: "internalBookingCreatedTemplate",
+    label: "การจองจากผู้ใช้ภายใน",
+    event: "booking.created",
+  },
+  {
     fn: "quotaAlertTemplate",
     label: "Quota ใกล้เต็ม",
     event: "internal.quota_alert",
+  },
+  {
+    fn: "contractExpiringTemplate",
+    label: "สัญญาเช่าใกล้หมด",
+    event: "notification.system",
+  },
+  {
+    fn: "dormantMembersTemplate",
+    label: "สมาชิก dormant > 60 วัน",
+    event: "notification.system",
   },
 ];
 

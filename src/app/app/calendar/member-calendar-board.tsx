@@ -36,8 +36,9 @@ interface BookingLite {
   internal_title: string | null;
   is_public: boolean;
   customer: { display_name: string } | null;
-  member: { full_name: string } | null;
-  org: { name: string } | null;
+  member: { full_name: string; position: string | null } | null;
+  org: { name: string; short_name: string | null } | null;
+  department?: string | null;
 }
 
 interface Props {
@@ -564,22 +565,48 @@ function EventCard({
         ? "EasySpace"
         : event.org?.name ?? "อื่น";
 
+  // Show who booked + their position/department for any booking inside the
+  // same org (including the viewer's own) — and respect privacy: only the
+  // member name appears when the booking is marked is_public OR it's mine.
+  const showMemberInfo =
+    (isMine || isSameOrg) &&
+    (isMine || event.is_public) &&
+    event.member !== null;
+  const memberLine = showMemberInfo
+    ? [event.member?.full_name, event.member?.position]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+  const deptLine = showMemberInfo && event.department ? event.department : null;
+
   const inner = (
     <div
       className={cn(
-        "absolute inset-x-1 top-1 rounded-card-sm border-l-2 px-2.5 py-1.5 shadow-card transition",
+        "absolute inset-x-1 top-1 rounded-card-sm border-l-2 px-2 py-1 shadow-card transition overflow-hidden",
         tone,
       )}
       style={{ height }}
     >
-      <p className="text-[11px] font-bold tracking-tight truncate">{label}</p>
-      <p className="text-[10px] opacity-80 tabular-nums">
+      <p className="text-[11px] font-bold tracking-tight truncate leading-tight">
+        {label}
+      </p>
+      {memberLine && (
+        <p className="text-[10px] opacity-80 tracking-tight truncate leading-tight">
+          {memberLine}
+        </p>
+      )}
+      {deptLine && height >= 60 && (
+        <p className="text-[10px] opacity-70 tracking-tight truncate leading-tight">
+          แผนก: {deptLine}
+        </p>
+      )}
+      <p className="text-[10px] opacity-80 tabular-nums leading-tight">
         {formatTime(event.starts_at)} – {formatTime(event.ends_at)}
       </p>
       {!isMine && !isSameOrg && event.source === "external" && (
         <Lock size={10} className="absolute top-1.5 right-1.5 opacity-50" />
       )}
-      {isMine && (
+      {isMine && height >= 70 && (
         <Badge tone="success" className="!text-[9px] !px-1.5 mt-1">
           ของฉัน
         </Badge>

@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { IconTile } from "@/components/ui/icon-tile";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ImageUploader } from "@/components/ui/image-uploader";
 import { cn } from "@/lib/cn";
 import { relativeFromNow } from "@/lib/format";
 import {
@@ -93,6 +94,25 @@ const ORG_STATUS_OPTIONS = [
   "archived",
 ] as const;
 
+const ORG_STATUS_LABEL_TH: Record<(typeof ORG_STATUS_OPTIONS)[number], string> =
+  {
+    active: "ใช้งานอยู่",
+    pending: "รออนุมัติ",
+    suspended: "ระงับชั่วคราว",
+    expired: "หมดสัญญา",
+    archived: "เก็บถาวร",
+  };
+
+const PLAN_TIER_LABEL_TH: Record<
+  "free" | "basic" | "pro" | "enterprise",
+  string
+> = {
+  free: "ฟรี (Free)",
+  basic: "เบสิก (Basic)",
+  pro: "โปร (Pro)",
+  enterprise: "เอ็นเทอร์ไพรส์ (Enterprise)",
+};
+
 export type AdminRow = {
   id: string;
   email: string;
@@ -130,6 +150,11 @@ export type OrgRow = {
   email_domains: string[];
   tags: string[];
   logo_url: string | null;
+  notes: string | null;
+  plan_tier: "free" | "basic" | "pro" | "enterprise";
+  contact_name: string | null;
+  quota_hours_monthly: number;
+  quota_unlimited: boolean;
   member_count: number;
   active_today: number;
   quota_used_month: number;
@@ -1075,9 +1100,12 @@ function OrgsTab({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filtered.map((o) => {
-            const pct = o.quota_total_month
-              ? (o.quota_used_month / o.quota_total_month) * 100
-              : 0;
+            const pct =
+              o.quota_unlimited || !isFinite(o.quota_total_month)
+                ? 0
+                : o.quota_total_month
+                  ? (o.quota_used_month / o.quota_total_month) * 100
+                  : 0;
             const inviteUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/book/${o.short_name?.toLowerCase() ?? o.id.slice(0, 8)}`;
             return (
               <Card key={o.id}>
@@ -1121,15 +1149,29 @@ function OrgsTab({
                   </div>
                   <div>
                     <div className="flex justify-between text-xs mb-1.5">
-                      <span className="text-ink-3">Quota เดือนนี้</span>
+                      <span className="text-ink-3">โควต้าเดือนนี้</span>
                       <span className="tabular-nums font-medium">
-                        {o.quota_used_month.toFixed(1)}/{o.quota_total_month} ชม.
+                        {o.quota_unlimited
+                          ? `${o.quota_used_month.toFixed(1)} ชม. · ไม่จำกัด`
+                          : `${o.quota_used_month.toFixed(1)}/${o.quota_hours_monthly} ชม.`}
                       </span>
                     </div>
                     <div className="h-2 rounded-pill bg-surface-subtle overflow-hidden">
                       <div
-                        className={`h-full ${pct > 90 ? "bg-red-500" : pct > 80 ? "bg-amber-500" : "bg-primary-600"}`}
-                        style={{ width: `${Math.min(100, pct)}%` }}
+                        className={`h-full ${
+                          o.quota_unlimited
+                            ? "bg-emerald-500"
+                            : pct > 90
+                              ? "bg-red-500"
+                              : pct > 80
+                                ? "bg-amber-500"
+                                : "bg-primary-600"
+                        }`}
+                        style={{
+                          width: o.quota_unlimited
+                            ? "100%"
+                            : `${Math.min(100, pct)}%`,
+                        }}
                       />
                     </div>
                   </div>
@@ -1291,7 +1333,7 @@ function OrgFormModal({
     email_domains: (initial?.email_domains ?? []).join(", "),
     contact_phone: initial?.contact_phone ?? "",
     contact_email: initial?.contact_email ?? "",
-    contact_name: "",
+    contact_name: initial?.contact_name ?? "",
     contract_start: initial?.contract_start ?? "",
     contract_end: initial?.contract_end ?? "",
     status: (initial?.status ?? "active") as
@@ -1300,9 +1342,15 @@ function OrgFormModal({
       | "suspended"
       | "expired"
       | "archived",
-    plan_tier: "basic" as "free" | "basic" | "pro" | "enterprise",
+    plan_tier: (initial?.plan_tier ?? "basic") as
+      | "free"
+      | "basic"
+      | "pro"
+      | "enterprise",
+    quota_hours_monthly: initial?.quota_hours_monthly ?? 40,
+    quota_unlimited: initial?.quota_unlimited ?? false,
     tags: (initial?.tags ?? []).join(", "),
-    notes: "",
+    notes: initial?.notes ?? "",
   });
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1330,6 +1378,8 @@ function OrgFormModal({
       contract_end: form.contract_end || null,
       status: form.status,
       plan_tier: form.plan_tier,
+      quota_hours_monthly: Math.max(0, Number(form.quota_hours_monthly) || 0),
+      quota_unlimited: form.quota_unlimited,
       tags: form.tags
         .split(",")
         .map((s) => s.trim())
@@ -1353,7 +1403,7 @@ function OrgFormModal({
               {mode === "create" ? "เพิ่มองค์กรใหม่" : "แก้ไของค์กร"}
             </p>
             <p className="text-xs text-ink-3 mt-0.5">
-              Logo · brand · contract · email domain · plan tier
+              โลโก้ · แบรนด์ · สัญญา · โดเมนอีเมล · แผน · โควต้าชั่วโมง
             </p>
           </div>
           <button
@@ -1376,7 +1426,7 @@ function OrgFormModal({
               />
             </div>
             <div>
-              <Label>ชื่อย่อ (สำหรับ slug)</Label>
+              <Label>ชื่อย่อ (สำหรับลิงก์/slug)</Label>
               <Input
                 value={form.short_name}
                 onChange={(e) =>
@@ -1387,25 +1437,26 @@ function OrgFormModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <ImageUploader
+            label="โลโก้องค์กร"
+            hint="PNG · JPG · WEBP · GIF · HEIC · ไม่เกิน 10 MB · แนะนำสี่เหลี่ยมจัตุรัส 512×512 px"
+            aspectRatio="1 / 1"
+            value={form.logo_url || null}
+            onChange={(url) =>
+              setForm({ ...form, logo_url: url ?? "" })
+            }
+          />
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Logo URL</Label>
-              <Input
-                value={form.logo_url}
-                onChange={(e) =>
-                  setForm({ ...form, logo_url: e.target.value })
-                }
-                placeholder="https://..."
-              />
-            </div>
-            <div>
-              <Label>Brand color</Label>
+              <Label>สีประจำแบรนด์</Label>
               <div className="flex gap-2">
                 <Input
                   value={form.brand_color}
                   onChange={(e) =>
                     setForm({ ...form, brand_color: e.target.value })
                   }
+                  placeholder="#3b5bdb"
                 />
                 <input
                   type="color"
@@ -1418,7 +1469,7 @@ function OrgFormModal({
               </div>
             </div>
             <div>
-              <Label>Status</Label>
+              <Label>สถานะองค์กร</Label>
               <Select
                 value={form.status}
                 onChange={(e) =>
@@ -1430,7 +1481,7 @@ function OrgFormModal({
               >
                 {ORG_STATUS_OPTIONS.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {ORG_STATUS_LABEL_TH[s]}
                   </option>
                 ))}
               </Select>
@@ -1439,24 +1490,25 @@ function OrgFormModal({
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <Label>Industry</Label>
+              <Label>ประเภทธุรกิจ</Label>
               <Input
                 value={form.industry}
                 onChange={(e) =>
                   setForm({ ...form, industry: e.target.value })
                 }
-                placeholder="Software / Marketing / Legal"
+                placeholder="เช่น ซอฟต์แวร์ / การตลาด / กฎหมาย"
               />
             </div>
             <div>
-              <Label>Floor</Label>
+              <Label>ชั้น/อาคาร</Label>
               <Input
                 value={form.floor}
                 onChange={(e) => setForm({ ...form, floor: e.target.value })}
+                placeholder="เช่น ชั้น 5"
               />
             </div>
             <div>
-              <Label>Plan tier</Label>
+              <Label>แผนการใช้งาน</Label>
               <Select
                 value={form.plan_tier}
                 onChange={(e) =>
@@ -1466,18 +1518,65 @@ function OrgFormModal({
                   })
                 }
               >
-                <option value="free">Free</option>
-                <option value="basic">Basic</option>
-                <option value="pro">Pro</option>
-                <option value="enterprise">Enterprise</option>
+                {(["free", "basic", "pro", "enterprise"] as const).map((t) => (
+                  <option key={t} value={t}>
+                    {PLAN_TIER_LABEL_TH[t]}
+                  </option>
+                ))}
               </Select>
+            </div>
+          </div>
+
+          {/* ── โควต้าชั่วโมงต่อเดือน ───────────────────────────────── */}
+          <div className="rounded-input bg-primary-50/40 border border-primary-100 p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-primary-700 tracking-tight">
+                โควต้าชั่วโมงใช้งานฟรีต่อเดือน
+              </p>
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={form.quota_unlimited}
+                  onChange={(e) =>
+                    setForm({ ...form, quota_unlimited: e.target.checked })
+                  }
+                  className="w-4 h-4 accent-primary-600"
+                />
+                <span className="text-xs font-medium text-ink-2">
+                  ไม่จำกัดชั่วโมงต่อเดือน
+                </span>
+              </label>
+            </div>
+            <div>
+              <Label>จำนวนชั่วโมงฟรี (ชม./เดือน)</Label>
+              <div className="relative">
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.quota_unlimited ? "" : form.quota_hours_monthly}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      quota_hours_monthly: Number(e.target.value) || 0,
+                    })
+                  }
+                  disabled={form.quota_unlimited}
+                  placeholder={form.quota_unlimited ? "ไม่จำกัด" : "40"}
+                />
+              </div>
+              <p className="text-[10px] text-ink-3 mt-1">
+                {form.quota_unlimited
+                  ? "องค์กรนี้ใช้ห้องประชุมได้ไม่จำกัดเวลาต่อเดือน — เหมาะกับลูกค้าสัญญาพิเศษ"
+                  : "เมื่อสมาชิกรวมกันใช้ครบจำนวนชั่วโมงนี้ในเดือน ระบบจะเตือน/หยุดให้จองเพิ่ม"}
+              </p>
             </div>
           </div>
 
           <div>
             <Label>
               <span className="inline-flex items-center gap-1">
-                <Globe size={11} /> Email domains (คั่นด้วย ,)
+                <Globe size={11} /> โดเมนอีเมลขององค์กร (คั่นด้วยเครื่องหมาย ,)
               </span>
             </Label>
             <Input
@@ -1488,44 +1587,47 @@ function OrgFormModal({
               placeholder="acme.com, acme.co.th"
             />
             <p className="text-[10px] text-ink-3 mt-1">
-              สมาชิกสมัครด้วย email โดเมนนี้จะ verify อัตโนมัติ
+              ถ้าสมาชิกสมัครด้วยอีเมลโดเมนนี้ ระบบจะ verify ให้อัตโนมัติ
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Primary contact name</Label>
+              <Label>ชื่อผู้ติดต่อหลัก</Label>
               <Input
                 value={form.contact_name}
                 onChange={(e) =>
                   setForm({ ...form, contact_name: e.target.value })
                 }
+                placeholder="เช่น คุณสมชาย"
               />
             </div>
             <div>
-              <Label>Phone</Label>
+              <Label>เบอร์โทรผู้ติดต่อ</Label>
               <Input
                 value={form.contact_phone}
                 onChange={(e) =>
                   setForm({ ...form, contact_phone: e.target.value })
                 }
+                placeholder="08x-xxx-xxxx"
               />
             </div>
             <div className="col-span-2">
-              <Label>Email</Label>
+              <Label>อีเมลผู้ติดต่อ</Label>
               <Input
                 type="email"
                 value={form.contact_email}
                 onChange={(e) =>
                   setForm({ ...form, contact_email: e.target.value })
                 }
+                placeholder="contact@acme.com"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Contract start</Label>
+              <Label>วันเริ่มสัญญา</Label>
               <Input
                 type="date"
                 value={form.contract_start}
@@ -1535,7 +1637,7 @@ function OrgFormModal({
               />
             </div>
             <div>
-              <Label>Contract end</Label>
+              <Label>วันสิ้นสุดสัญญา</Label>
               <Input
                 type="date"
                 value={form.contract_end}
@@ -1547,11 +1649,11 @@ function OrgFormModal({
           </div>
 
           <div>
-            <Label>Tags (คั่นด้วย ,)</Label>
+            <Label>แท็ก (คั่นด้วยเครื่องหมาย ,)</Label>
             <Input
               value={form.tags}
               onChange={(e) => setForm({ ...form, tags: e.target.value })}
-              placeholder="VIP, BNI, anchor"
+              placeholder="VIP, BNI, ลูกค้าหลัก"
             />
           </div>
 

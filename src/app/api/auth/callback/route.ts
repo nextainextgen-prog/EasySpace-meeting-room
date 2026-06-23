@@ -6,6 +6,7 @@ import { recordLogin } from "@/lib/auth";
 import { registerMember } from "@/lib/actions/members";
 
 const REGISTER_COOKIE = "easyspace.register_intent";
+const LAST_INVITE_COOKIE = "easyspace.last_invite";
 
 type RegisterIntent = {
   inviteCode: string;
@@ -29,14 +30,23 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const nextOverride = searchParams.get("next");
 
+  // Helper: route every failure to /book/<invite> when the visitor came from
+  // a member invite — never to /login (admin page).
+  const cookieStore = await cookies();
+  const lastInvite = cookieStore.get(LAST_INVITE_COOKIE)?.value ?? null;
+  const failRedirect = (errCode: string) =>
+    lastInvite
+      ? `${origin}/book/${encodeURIComponent(lastInvite)}?error=${errCode}`
+      : `${origin}/login?error=${errCode}`;
+
   if (!code) {
-    return NextResponse.redirect(`${origin}/login?error=oauth_failed`);
+    return NextResponse.redirect(failRedirect("oauth_failed"));
   }
 
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error || !data.user) {
-    return NextResponse.redirect(`${origin}/login?error=oauth_failed`);
+    return NextResponse.redirect(failRedirect("oauth_failed"));
   }
   const user = data.user;
 
@@ -44,7 +54,6 @@ export async function GET(request: NextRequest) {
   const ip = forwardedFor?.split(",")[0]?.trim();
   await recordLogin(user.id, ip);
 
-  const cookieStore = await cookies();
   const intentRaw = cookieStore.get(REGISTER_COOKIE)?.value;
 
   // ─── Flow 1: register-via-Google intent ──────────────────────────────
@@ -81,8 +90,15 @@ export async function GET(request: NextRequest) {
               : res.error === "invite_invalid"
                 ? "invite"
                 : "register";
+          // Surface the raw error message in the URL so admins can debug
+          // production failures without diving into Vercel logs every time.
+          const extra =
+            detail === "register" && res.error
+              ? `&detail=${encodeURIComponent(res.error.slice(0, 200))}`
+              : "";
+          console.error("[auth/callback] registerMember failed", res.error);
           return NextResponse.redirect(
-            `${origin}/book/${intent.inviteCode}?error=${detail}`,
+            `${origin}/book/${intent.inviteCode}?error=${detail}${extra}`,
           );
         }
         return NextResponse.redirect(`${origin}/app?welcome=1`);
@@ -123,15 +139,36 @@ export async function GET(request: NextRequest) {
   if (!hasMember && user.email) {
     const { data: memberByEmail } = await admin
       .from("members")
-      .select("id")
+      .select("id, profile_id")
       .eq("email", user.email.toLowerCase())
       .maybeSingle();
-    hasMember = !!memberByEmail;
+    const matched = memberByEmail as { id: string; profile_id: string | null } | null;
+    hasMember = !!matched;
+    // Self-heal: if the member was registered before the OAuth user existed
+    // (email-form registration), link the auth user now so future logins
+    // resolve via profile_id and we never lose the row to case quirks.
+    if (matched && !matched.profile_id) {
+      await admin
+        .from("members")
+        .update({ profile_id: user.id } as never)
+        .eq("id", matched.id);
+    }
   }
   if (hasMember) {
     return NextResponse.redirect(`${origin}/app`);
   }
 
   // ─── Unregistered ────────────────────────────────────────────────────
-  return NextResponse.redirect(`${origin}/member-login?error=not_registered`);
+  // Send them back to the org's /book/<code> landing with the Google email
+  // attached, so the banner can tell the user exactly which account didn't
+  // match and offer a one-click register-with-this-email.
+  const emailParam = user.email ? `&email=${encodeURIComponent(user.email)}` : "";
+  if (lastInvite) {
+    return NextResponse.redirect(
+      `${origin}/book/${encodeURIComponent(lastInvite)}?error=not_registered${emailParam}`,
+    );
+  }
+  return NextResponse.redirect(
+    `${origin}/member-login?error=not_registered${emailParam}`,
+  );
 }

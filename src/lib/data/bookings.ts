@@ -57,6 +57,21 @@ export interface BookingWithRelations extends Booking {
     color: string;
     capacity_max: number | null;
   };
+  member?: {
+    id: string;
+    full_name: string;
+    email: string;
+    phone: string | null;
+    position: string | null;
+  } | null;
+  org?: {
+    id: string;
+    name: string;
+    short_name: string | null;
+  } | null;
+  /** Derived from member_organizations.department_id → departments.name
+   *  for the (member_id, org_id) of this booking. */
+  department?: string | null;
 }
 
 export async function listBookingsForRange(opts: {
@@ -70,14 +85,65 @@ export async function listBookingsForRange(opts: {
       `
       *,
       customer:customers(id, display_name, phone, email, tags),
-      room:rooms(id, name, color, capacity_max)
+      room:rooms(id, name, color, capacity_max),
+      member:members(id, full_name, email, phone, position),
+      org:organizations(id, name, short_name)
     `,
     )
     .gte("starts_at", opts.start)
     .lte("starts_at", opts.end)
     .order("starts_at");
   if (error) throw error;
-  return (data ?? []) as unknown as BookingWithRelations[];
+  const rows = (data ?? []) as unknown as BookingWithRelations[];
+  await enrichBookingsWithDepartment(supabase, rows);
+  return rows;
+}
+
+/**
+ * Look up each booking's member→org department (via member_organizations →
+ * departments) and attach it to the row. Bookings without member_id or org_id
+ * get null. Single round-trip per unique (member, org) pair.
+ */
+export async function enrichBookingsWithDepartment(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  bookings: BookingWithRelations[],
+) {
+  const pairs = new Map<string, { memberId: string; orgId: string }>();
+  for (const b of bookings) {
+    if (b.member_id && b.org_id) {
+      pairs.set(`${b.member_id}::${b.org_id}`, {
+        memberId: b.member_id,
+        orgId: b.org_id,
+      });
+    }
+  }
+  if (pairs.size === 0) return;
+
+  const memberIds = Array.from(new Set([...pairs.values()].map((p) => p.memberId)));
+  const orgIds = Array.from(new Set([...pairs.values()].map((p) => p.orgId)));
+
+  const { data } = await supabase
+    .from("member_organizations")
+    .select("member_id, org_id, department:departments(name)")
+    .in("member_id", memberIds)
+    .in("org_id", orgIds);
+
+  const byPair = new Map<string, string | null>();
+  for (const row of (data ?? []) as Array<{
+    member_id: string;
+    org_id: string;
+    department: { name: string } | null;
+  }>) {
+    byPair.set(`${row.member_id}::${row.org_id}`, row.department?.name ?? null);
+  }
+
+  for (const b of bookings) {
+    if (b.member_id && b.org_id) {
+      b.department = byPair.get(`${b.member_id}::${b.org_id}`) ?? null;
+    } else {
+      b.department = null;
+    }
+  }
 }
 
 export async function getBookingById(id: string) {

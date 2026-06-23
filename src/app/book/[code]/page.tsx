@@ -4,23 +4,34 @@ import {
   Building2,
   Clock,
   Users,
-  ArrowRight,
   AlertCircle,
+  Check,
   Sparkles,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { getInviteByCode } from "@/lib/data/invites";
 import { getOrgUsage } from "@/lib/data/organizations";
 import { listRooms } from "@/lib/data/rooms";
+import { BookGoogleButton } from "./book-google-button";
 
 export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ code: string }>;
+  searchParams: Promise<{
+    registered?: string;
+    signed_out?: string;
+    error?: string;
+    email?: string;
+    detail?: string;
+  }>;
 }
 
-export default async function InviteLandingPage({ params }: PageProps) {
+export default async function InviteLandingPage({
+  params,
+  searchParams,
+}: PageProps) {
   const { code } = await params;
+  const sp = await searchParams;
   const invite = await getInviteByCode(code);
 
   // Invalid / expired / disabled invite — show error card
@@ -102,9 +113,9 @@ export default async function InviteLandingPage({ params }: PageProps) {
         <div className="mt-6 grid grid-cols-3 gap-2.5">
           <Stat
             icon={Clock}
-            label="Quota"
-            value={`${usage.quotaHoursMonthly}`}
-            unit="ชม./เดือน"
+            label="โควต้า"
+            value={usage.quotaUnlimited ? "∞" : `${usage.quotaHoursMonthly}`}
+            unit={usage.quotaUnlimited ? "ไม่จำกัด" : "ชม./เดือน"}
           />
           <Stat
             icon={Users}
@@ -133,21 +144,84 @@ export default async function InviteLandingPage({ params }: PageProps) {
           </div>
         )}
 
+        {/* ── Status banner from redirects (signed out / registered / error) ── */}
+        {sp.registered === "1" && (
+          <div className="mt-5 rounded-input bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs text-emerald-800 flex items-start gap-2">
+            <Check size={13} className="mt-0.5 shrink-0" />
+            <span>
+              <span className="font-semibold">ลงทะเบียนสำเร็จ</span> —
+              กดปุ่มด้านล่างเพื่อเข้าสู่ระบบด้วย Google ที่อีเมลของคุณ
+            </span>
+          </div>
+        )}
+        {sp.signed_out === "1" && (
+          <div className="mt-5 rounded-input bg-ink-1/5 border border-line-soft px-3.5 py-2.5 text-xs text-ink-2 flex items-start gap-2">
+            <Check size={13} className="mt-0.5 shrink-0 text-emerald-600" />
+            <span>ออกจากระบบเรียบร้อย — เข้าใหม่ได้เลย</span>
+          </div>
+        )}
+        {sp.error === "not_registered" && (
+          <div className="mt-5 rounded-input bg-amber-50 border border-amber-200 px-3.5 py-3 text-xs text-amber-900 space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertCircle size={13} className="mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="font-semibold">
+                  ยังไม่ได้ลงทะเบียนอีเมลนี้ในระบบ
+                </p>
+                {sp.email && (
+                  <p className="mt-1 text-amber-800">
+                    บัญชี Google ที่คุณเพิ่งใช้:{" "}
+                    <code className="font-mono font-semibold bg-amber-100/70 px-1.5 py-0.5 rounded">
+                      {sp.email}
+                    </code>
+                  </p>
+                )}
+                <p className="mt-1.5 text-[11px] text-amber-800 leading-relaxed">
+                  ถ้าคุณ <b>ลงทะเบียนไว้ด้วยอีเมลอื่น</b>{" "}
+                  ให้กดปุ่ม Google ด้านล่างใหม่และเลือกบัญชีที่ตรงกัน
+                  <br />
+                  หรือ <b>ลงทะเบียนอีเมล Google นี้</b> เพิ่มเข้าระบบก็ได้
+                </p>
+                <Link
+                  href={`/book/${code}/register${sp.email ? `?email=${encodeURIComponent(sp.email)}` : ""}`}
+                  className="inline-block mt-2 px-3 py-1.5 rounded-pill bg-amber-900 text-white font-semibold hover:bg-amber-800 transition"
+                >
+                  ลงทะเบียนอีเมลนี้
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+        {(sp.error === "oauth_failed" ||
+          sp.error === "domain" ||
+          sp.error === "invite" ||
+          sp.error === "register") && (
+          <div className="mt-5 rounded-input bg-red-50 border border-red-200 px-3.5 py-2.5 text-xs text-red-800 flex items-start gap-2">
+            <AlertCircle size={13} className="mt-0.5 shrink-0" />
+            <span>
+              {sp.error === "oauth_failed" &&
+                "เข้าสู่ระบบด้วย Google ไม่สำเร็จ — กดปุ่มด้านล่างเพื่อลองอีกครั้ง"}
+              {sp.error === "domain" &&
+                "อีเมล Google ไม่ตรงกับโดเมนที่อนุญาตในองค์กรนี้"}
+              {sp.error === "invite" &&
+                "ลิงก์เชิญไม่ถูกต้องหรือหมดอายุ"}
+              {sp.error === "register" && (
+                <>
+                  ลงทะเบียนไม่สำเร็จ — โปรดลองอีกครั้งหรือติดต่อแอดมิน
+                  {sp.detail && (
+                    <span className="block mt-1 text-[11px] font-mono text-red-700 bg-red-100/70 px-2 py-1 rounded">
+                      {sp.detail}
+                    </span>
+                  )}
+                </>
+              )}
+            </span>
+          </div>
+        )}
+
         {/* ── CTA ─────────────────────────────────────── */}
         <div className="mt-6 space-y-2.5">
-          <Link
-            href={`/member-login?invite=${encodeURIComponent(code)}`}
-            className="block"
-          >
-            <Button
-              variant="gradient"
-              size="lg"
-              className="w-full !h-12"
-              iconRight={<ArrowRight size={16} />}
-            >
-              เข้าสู่ระบบด้วย Google
-            </Button>
-          </Link>
+          <BookGoogleButton inviteCode={code} />
           <p className="text-center text-xs text-ink-3">
             ยังไม่ได้สมัคร?{" "}
             <Link

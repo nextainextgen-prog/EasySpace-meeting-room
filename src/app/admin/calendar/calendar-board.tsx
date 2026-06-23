@@ -135,6 +135,20 @@ function minutesOf(date: string | Date) {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.getHours() * 60 + d.getMinutes();
 }
+function bookingDisplayName(b: BookingWithRelations): string {
+  if (b.customer?.display_name) return b.customer.display_name;
+  if (b.member?.full_name) {
+    const org = b.org?.short_name ?? b.org?.name;
+    return org ? `${b.member.full_name} · ${org}` : b.member.full_name;
+  }
+  return b.internal_title ?? "—";
+}
+
+function memberRoleLine(b: BookingWithRelations): string | null {
+  const bits = [b.member?.position, b.department].filter(Boolean) as string[];
+  return bits.length > 0 ? bits.join(" · ") : null;
+}
+
 function paymentColor(status: string) {
   switch (status) {
     case "paid":
@@ -237,7 +251,7 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
       )
         return false;
       if (q) {
-        const hay = `${b.reference_code} ${b.customer?.display_name ?? ""} ${b.customer?.phone ?? ""} ${b.internal_title ?? ""}`.toLowerCase();
+        const hay = `${b.reference_code} ${b.customer?.display_name ?? ""} ${b.customer?.phone ?? ""} ${b.internal_title ?? ""} ${b.member?.full_name ?? ""} ${b.member?.email ?? ""} ${b.org?.name ?? ""} ${b.org?.short_name ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -1451,17 +1465,33 @@ function EventCard({
         onContextMenu(e.clientX, e.clientY);
       }}
       className={cn(
-        "absolute inset-x-1 top-1 rounded-card-sm border-l-2 px-2.5 py-1.5 shadow-card hover:shadow-card-hover transition cursor-pointer group",
+        "absolute inset-x-1 top-1 rounded-card-sm border-l-2 px-2 py-1 shadow-card hover:shadow-card-hover transition cursor-pointer group overflow-hidden",
         paymentColor(event.payment_status),
         selected && "!ring-2 ring-primary-600 ring-offset-1",
         cancelled && "opacity-50 line-through",
       )}
       style={{ height, zIndex: resizing ? 30 : undefined }}
-      title="คลิกเพื่อแก้ไข · Shift+คลิก เลือก · ลากย้าย · คลิกขวาเมนู"
+      title={[
+        event.customer?.display_name ??
+          event.member?.full_name ??
+          event.internal_title ??
+          "—",
+        event.org?.name,
+        memberRoleLine(event),
+        `${formatTime(event.starts_at)} – ${formatTime(event.ends_at)}`,
+        event.reference_code,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
     >
-      <div className="flex items-start gap-1">
+      {/* Adaptive layout — short blocks (<70px) collapse to name + time only.
+       *  Taller blocks add org/role/title/ref lines progressively. */}
+      <div className="flex items-start gap-1 leading-tight">
         <p className="text-[11px] font-bold text-ink-1 tracking-tight truncate flex-1">
-          {event.customer?.display_name ?? event.internal_title ?? "—"}
+          {event.customer?.display_name ??
+            event.member?.full_name ??
+            event.internal_title ??
+            "—"}
         </p>
         {selected && (
           <span className="w-3.5 h-3.5 rounded-sm bg-primary-600 text-white grid place-items-center text-[9px] shrink-0">
@@ -1476,13 +1506,38 @@ function EventCard({
           />
         )}
       </div>
-      <p className="text-[10px] text-ink-3 tabular-nums">
+      {height >= 50 && event.org && (
+        <p className="text-[10px] text-primary-700 tracking-tight truncate font-medium leading-tight">
+          {event.org.short_name ?? event.org.name}
+        </p>
+      )}
+      {height >= 70 && memberRoleLine(event) && (
+        <p className="text-[10px] text-ink-2 tracking-tight truncate leading-tight">
+          {memberRoleLine(event)}
+        </p>
+      )}
+      {height >= 90 &&
+        event.member &&
+        !event.customer?.display_name &&
+        event.internal_title && (
+          <p className="text-[10px] text-ink-3 tracking-tight truncate italic leading-tight">
+            {event.internal_title}
+          </p>
+        )}
+      <p className="text-[10px] text-ink-3 tabular-nums leading-tight">
         {formatTime(event.starts_at)} – {formatTime(event.ends_at)}
       </p>
-      <p className="text-[10px] text-ink-3 tabular-nums">
-        <code className="font-mono">{event.reference_code}</code>
-      </p>
-      {event.customer?.tags?.includes("VIP") && (
+      {height >= 60 && (
+        <p className="text-[10px] text-ink-3 tabular-nums leading-tight truncate">
+          <code className="font-mono">{event.reference_code}</code>
+          {event.source === "internal" && (
+            <span className="ml-1.5 inline-flex items-center px-1 rounded-sm bg-primary-100 text-primary-700 text-[9px] font-semibold">
+              สมาชิก
+            </span>
+          )}
+        </p>
+      )}
+      {height >= 100 && event.customer?.tags?.includes("VIP") && (
         <Badge tone="primary" className="!text-[9px] !px-1.5 mt-1">
           VIP
         </Badge>
@@ -1562,7 +1617,7 @@ function WeekView({
                     )}
                   >
                     <p className="font-semibold truncate">
-                      {b.customer?.display_name ?? "—"}
+                      {bookingDisplayName(b)}
                     </p>
                     <p className="text-ink-3 tabular-nums">
                       {formatTime(b.starts_at)}
@@ -1680,7 +1735,7 @@ function MonthView({
                       paymentColor(b.payment_status),
                     )}
                   >
-                    {formatTime(b.starts_at)} · {b.customer?.display_name ?? "—"}
+                    {formatTime(b.starts_at)} · {bookingDisplayName(b)}
                   </div>
                 ))}
                 {list.length > 3 && (
@@ -1864,7 +1919,7 @@ function TimelineView({
                     )}
                   >
                     <p className="text-[10px] font-semibold truncate">
-                      {b.customer?.display_name ?? "—"}
+                      {bookingDisplayName(b)}
                     </p>
                     <p className="text-[9px] text-ink-3 tabular-nums">
                       {formatTime(b.starts_at)}–{formatTime(b.ends_at)}
@@ -1942,7 +1997,7 @@ function ListView({
                     </button>
                   </td>
                   <td className="px-3 py-2 text-xs">
-                    {b.customer?.display_name ?? "—"}
+                    {bookingDisplayName(b)}
                   </td>
                   <td className="px-3 py-2 text-xs">
                     {room?.name ?? "—"}
@@ -2263,7 +2318,8 @@ function exportCSV(bookings: BookingWithRelations[], rooms: Room[]) {
   const roomMap = new Map(rooms.map((r) => [r.id, r.name]));
   const header = [
     "รหัส",
-    "ลูกค้า",
+    "ลูกค้า/สมาชิก",
+    "องค์กร",
     "เบอร์",
     "ห้อง",
     "เริ่ม",
@@ -2278,8 +2334,9 @@ function exportCSV(bookings: BookingWithRelations[], rooms: Room[]) {
     lines.push(
       [
         b.reference_code,
-        `"${b.customer?.display_name ?? ""}"`,
-        b.customer?.phone ?? "",
+        `"${b.customer?.display_name ?? b.member?.full_name ?? ""}"`,
+        `"${b.org?.name ?? ""}"`,
+        b.customer?.phone ?? b.member?.phone ?? "",
         `"${roomMap.get(b.room_id) ?? ""}"`,
         new Date(b.starts_at).toLocaleString("th-TH"),
         new Date(b.ends_at).toLocaleString("th-TH"),

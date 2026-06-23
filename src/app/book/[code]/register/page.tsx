@@ -7,10 +7,12 @@ export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{ code: string }>;
+  searchParams: Promise<{ email?: string }>;
 }
 
-export default async function RegisterPage({ params }: PageProps) {
+export default async function RegisterPage({ params, searchParams }: PageProps) {
   const { code } = await params;
+  const sp = await searchParams;
   const invite = await getInviteByCode(code);
 
   if (!invite) {
@@ -92,6 +94,7 @@ export default async function RegisterPage({ params }: PageProps) {
           <RegisterForm
             inviteCode={code}
             allowedDomains={invite.organization.email_domains}
+            initialEmail={sp.email ?? ""}
           />
         </div>
 
@@ -99,7 +102,7 @@ export default async function RegisterPage({ params }: PageProps) {
           <p className="text-center text-xs text-ink-3">
             มีบัญชีอยู่แล้ว?{" "}
             <Link
-              href={`/member-login?invite=${encodeURIComponent(code)}`}
+              href={`/book/${encodeURIComponent(code)}`}
               className="text-primary-600 font-semibold hover:underline"
             >
               เข้าสู่ระบบ

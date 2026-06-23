@@ -30,6 +30,8 @@ const UpsertOrgSchema = z.object({
   contract_end: z.string().nullable().optional(),
   status: OrgStatusEnum.default("active"),
   plan_tier: z.enum(["free", "basic", "pro", "enterprise"]).default("basic"),
+  quota_hours_monthly: z.number().int().min(0).default(40),
+  quota_unlimited: z.boolean().default(false),
   tags: z.array(z.string()).default([]),
   notes: z.string().nullable().optional(),
 });
@@ -87,6 +89,8 @@ export async function upsertOrganization(
       value: {
         plan_tier: input.plan_tier,
         contact_name: input.contact_name ?? null,
+        quota_hours_monthly: input.quota_hours_monthly,
+        quota_unlimited: input.quota_unlimited,
       } as never,
       category: "organizations",
     } as never,

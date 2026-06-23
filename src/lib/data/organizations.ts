@@ -36,8 +36,10 @@ export interface OrgUsage {
   activeMembers: number;
   bookingsThisMonth: number;
   hoursThisMonth: number;
+  /** Configured monthly quota in hours; ignored when `quotaUnlimited` is true. */
   quotaHoursMonthly: number;
   quotaPct: number;
+  quotaUnlimited: boolean;
 }
 
 export async function getOrgUsage(orgId: string): Promise<OrgUsage> {
@@ -47,17 +49,23 @@ export async function getOrgUsage(orgId: string): Promise<OrgUsage> {
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
 
-  const [{ data: members }, { data: bookings }] = await Promise.all([
-    admin
-      .from("member_organizations")
-      .select("member_id, is_active, member:members(id, is_active)")
-      .eq("org_id", orgId),
-    admin
-      .from("bookings")
-      .select("starts_at, ends_at")
-      .eq("org_id", orgId)
-      .gte("starts_at", monthStart.toISOString()),
-  ]);
+  const [{ data: members }, { data: bookings }, { data: metaRow }] =
+    await Promise.all([
+      admin
+        .from("member_organizations")
+        .select("member_id, is_active, member:members(id, is_active)")
+        .eq("org_id", orgId),
+      admin
+        .from("bookings")
+        .select("starts_at, ends_at")
+        .eq("org_id", orgId)
+        .gte("starts_at", monthStart.toISOString()),
+      admin
+        .from("settings")
+        .select("value")
+        .eq("key", `org.${orgId}.meta`)
+        .maybeSingle(),
+    ]);
 
   const memberRows = (members ?? []) as Array<{
     is_active: boolean;
@@ -76,8 +84,15 @@ export async function getOrgUsage(orgId: string): Promise<OrgUsage> {
     );
   }, 0);
 
-  // Default quota from settings.org_defaults; hard-code 40 for Phase 1.
-  const quotaHoursMonthly = 40;
+  const meta = ((metaRow as { value?: unknown } | null)?.value ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const quotaUnlimited = meta.quota_unlimited === true;
+  const quotaHoursMonthly =
+    typeof meta.quota_hours_monthly === "number" && meta.quota_hours_monthly >= 0
+      ? meta.quota_hours_monthly
+      : 40;
 
   return {
     members: memberRows.length,
@@ -86,9 +101,12 @@ export async function getOrgUsage(orgId: string): Promise<OrgUsage> {
     bookingsThisMonth: bookingRows.length,
     hoursThisMonth: Math.round(hours * 10) / 10,
     quotaHoursMonthly,
+    quotaUnlimited,
     quotaPct:
-      quotaHoursMonthly > 0
-        ? Math.min(100, Math.round((hours / quotaHoursMonthly) * 100))
-        : 0,
+      quotaUnlimited
+        ? 0
+        : quotaHoursMonthly > 0
+          ? Math.min(100, Math.round((hours / quotaHoursMonthly) * 100))
+          : 0,
   };
 }

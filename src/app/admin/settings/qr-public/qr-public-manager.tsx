@@ -40,13 +40,20 @@ export function QrPublicManager({
   defaults: PublicRoomConfig;
 }) {
   const [form, setForm] = useState<PublicRoomConfig>(initial);
-  const [origin, setOrigin] = useState("");
+  const [origin, setOrigin] = useState(
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://easy-space-meeting-room.vercel.app",
+  );
   const [savedHint, setSavedHint] = useState(false);
   const [pending, startTransition] = useTransition();
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    setOrigin(window.location.origin);
+    // Prefer the canonical public URL — falls back to current origin when
+    // NEXT_PUBLIC_APP_URL is unset (local dev / preview deployment).
+    setOrigin(
+      process.env.NEXT_PUBLIC_APP_URL ??
+        "https://easy-space-meeting-room.vercel.app",
+    );
   }, []);
 
   // Slug rows derived from slug_map + DEFAULT_SLUGS
@@ -160,7 +167,7 @@ export function QrPublicManager({
                 onChange={(e) =>
                   setForm({ ...form, line_url: e.target.value })
                 }
-                placeholder="https://lin.ee/easyspace"
+                placeholder="https://lin.ee/UXh4vjD"
               />
             </div>
             <div>
@@ -178,7 +185,7 @@ export function QrPublicManager({
               <Input
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                placeholder="02-000-0000"
+                placeholder="093-388-3555"
               />
             </div>
             <div>

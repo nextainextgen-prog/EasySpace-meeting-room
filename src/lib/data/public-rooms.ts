@@ -14,9 +14,9 @@ export interface PublicRoomConfig {
 
 export const DEFAULT_PUBLIC_ROOM_CONFIG: PublicRoomConfig = {
   enabled: true,
-  line_url: "https://lin.ee/easyspace",
+  line_url: "https://lin.ee/UXh4vjD",
   line_id: "@easyspace",
-  phone: "02-000-0000",
+  phone: "093-388-3555",
   show_days: 3,
   headline: "เช็กห้องว่าง · ติดต่อจองได้ทันที",
   show_capacity: true,

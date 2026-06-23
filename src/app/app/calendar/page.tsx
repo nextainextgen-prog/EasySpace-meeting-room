@@ -20,15 +20,15 @@ async function listBookingsForYear(year: number) {
       `id, room_id, starts_at, ends_at, source, org_id, member_id,
        booking_status, internal_title, is_public,
        customer:customers(display_name),
-       member:members(full_name),
-       org:organizations(name)`,
+       member:members(full_name, position),
+       org:organizations(name, short_name)`,
     )
     .gte("starts_at", start)
     .lte("starts_at", end)
     .neq("booking_status", "cancelled")
     .order("starts_at");
   if (error) throw error;
-  return (data ?? []) as Array<{
+  const rows = (data ?? []) as Array<{
     id: string;
     room_id: string;
     starts_at: string;
@@ -40,9 +40,43 @@ async function listBookingsForYear(year: number) {
     internal_title: string | null;
     is_public: boolean;
     customer: { display_name: string } | null;
-    member: { full_name: string } | null;
-    org: { name: string } | null;
+    member: { full_name: string; position: string | null } | null;
+    org: { name: string; short_name: string | null } | null;
+    department?: string | null;
   }>;
+
+  // Enrich with department per (member, org) pair.
+  const pairs = new Set<string>();
+  const memberIds = new Set<string>();
+  const orgIds = new Set<string>();
+  for (const b of rows) {
+    if (b.member_id && b.org_id) {
+      pairs.add(`${b.member_id}::${b.org_id}`);
+      memberIds.add(b.member_id);
+      orgIds.add(b.org_id);
+    }
+  }
+  if (pairs.size > 0) {
+    const { data: moRows } = await admin
+      .from("member_organizations")
+      .select("member_id, org_id, department:departments(name)")
+      .in("member_id", Array.from(memberIds))
+      .in("org_id", Array.from(orgIds));
+    const map = new Map<string, string | null>();
+    for (const r of (moRows ?? []) as Array<{
+      member_id: string;
+      org_id: string;
+      department: { name: string } | null;
+    }>) {
+      map.set(`${r.member_id}::${r.org_id}`, r.department?.name ?? null);
+    }
+    for (const b of rows) {
+      if (b.member_id && b.org_id) {
+        b.department = map.get(`${b.member_id}::${b.org_id}`) ?? null;
+      }
+    }
+  }
+  return rows;
 }
 
 export default async function MemberCalendarPage() {

@@ -49,9 +49,17 @@ export default async function TeamPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <KpiCard
-          label="Quota เดือนนี้"
-          value={`${usage.hoursThisMonth}/${usage.quotaHoursMonthly} ชม.`}
-          hint={`${usage.quotaPct}% ใช้ไปแล้ว`}
+          label="โควต้าเดือนนี้"
+          value={
+            usage.quotaUnlimited
+              ? `${usage.hoursThisMonth} ชม.`
+              : `${usage.hoursThisMonth}/${usage.quotaHoursMonthly} ชม.`
+          }
+          hint={
+            usage.quotaUnlimited
+              ? "ไม่จำกัดชั่วโมง"
+              : `${usage.quotaPct}% ใช้ไปแล้ว`
+          }
           icon={Clock}
         />
         <KpiCard
