@@ -80,7 +80,7 @@ async function main() {
   if (invErr) throw invErr;
   let orgIds: string[] = [];
   if (invite?.org_id) {
-    const org = (invite as { org?: { id: string; name: string; short_name: string | null } }).org;
+    const org = (invite as unknown as { org?: { id: string; name: string; short_name: string | null } }).org;
     console.log(`  org via invite code: ${org?.name} (id=${invite.org_id}, short=${org?.short_name})`);
     orgIds = [invite.org_id as string];
   } else {
