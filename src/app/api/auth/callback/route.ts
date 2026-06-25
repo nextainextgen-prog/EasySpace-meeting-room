@@ -39,14 +39,29 @@ export async function GET(request: NextRequest) {
       ? `${origin}/book/${encodeURIComponent(lastInvite)}?error=${errCode}`
       : `${origin}/login?error=${errCode}`;
 
+  // Surface the real reason in the URL + server logs. Google/Supabase send
+  // back ?error=...&error_description=... when consent fails; our own
+  // exchange can fail when the PKCE verifier cookie is missing. Without this
+  // every failure collapses to an opaque "oauth_failed".
+  const reasonParam = (msg: string | null | undefined) =>
+    msg ? `&reason=${encodeURIComponent(msg.slice(0, 160))}` : "";
+
   if (!code) {
-    return NextResponse.redirect(failRedirect("oauth_failed"));
+    const provErr =
+      searchParams.get("error_description") || searchParams.get("error");
+    console.error("[auth/callback] no code in callback", provErr);
+    return NextResponse.redirect(
+      failRedirect("oauth_failed") + reasonParam(provErr ?? "no_code"),
+    );
   }
 
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error || !data.user) {
-    return NextResponse.redirect(failRedirect("oauth_failed"));
+    console.error("[auth/callback] exchange failed", error?.message);
+    return NextResponse.redirect(
+      failRedirect("oauth_failed") + reasonParam(error?.message ?? "no_user"),
+    );
   }
   const user = data.user;
 
