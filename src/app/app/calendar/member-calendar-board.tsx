@@ -48,7 +48,9 @@ interface Props {
   orgId: string | null;
 }
 
-const SLOT_MIN_START = 8 * 60 + 30;
+// Cover the full bookable window (07:00–22:00) so no booking is hidden — a
+// booking the member can't see is a booking they could double-book over.
+const SLOT_MIN_START = 7 * 60;
 const SLOT_MIN_END = 22 * 60;
 const SLOT_HEIGHT = 36;
 const SLOTS: string[] = [];

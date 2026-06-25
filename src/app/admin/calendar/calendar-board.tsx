@@ -56,7 +56,10 @@ type FilterState = {
 type Preset = { id: string; name: string; filters: FilterState };
 
 const SLOT_HEIGHT = 36; // px
-const SERVICE_START_MIN = 8 * 60 + 30;
+// Must cover the full bookable window used by the booking forms (07:00–22:00).
+// If the calendar starts later than the earliest bookable time, any booking in
+// that gap silently vanishes from the day view — which hides real conflicts.
+const SERVICE_START_MIN = 7 * 60;
 const SERVICE_END_MIN = 22 * 60;
 const SLOTS: string[] = [];
 for (let m = SERVICE_START_MIN; m <= SERVICE_END_MIN; m += 30) {
@@ -1352,9 +1355,14 @@ function DayView({
                 const event = todayBookings.find((b) => {
                   if (b.room_id !== room.id) return false;
                   const start = new Date(b.starts_at);
-                  return (
-                    start.getHours() === h && start.getMinutes() === m
-                  );
+                  const sMin = start.getHours() * 60 + start.getMinutes();
+                  // Safety net: a booking that starts before the visible window
+                  // (legacy/imported data outside 07:00–22:00) is anchored to
+                  // the first slot so it stays visible instead of vanishing and
+                  // causing a silent double-book.
+                  if (slotMin === SERVICE_START_MIN && sMin < SERVICE_START_MIN)
+                    return true;
+                  return start.getHours() === h && start.getMinutes() === m;
                 });
                 return (
                   <div
@@ -1415,7 +1423,13 @@ function EventCard({
 }) {
   const start = new Date(event.starts_at);
   const end = new Date(event.ends_at);
-  const slotCount = (end.getTime() - start.getTime()) / (30 * 60 * 1000);
+  // Clamp the start to the visible window so a booking anchored to the first
+  // slot (one that began before SERVICE_START_MIN) doesn't render oversized.
+  const windowStart = new Date(start);
+  windowStart.setHours(Math.floor(SERVICE_START_MIN / 60), SERVICE_START_MIN % 60, 0, 0);
+  const effectiveStart = start < windowStart ? windowStart : start;
+  const slotCount =
+    (end.getTime() - effectiveStart.getTime()) / (30 * 60 * 1000);
   const baseHeight = slotCount * SLOT_HEIGHT - 4;
 
   const [resizing, setResizing] = useState(false);
