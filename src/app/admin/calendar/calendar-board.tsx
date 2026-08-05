@@ -2456,7 +2456,7 @@ function QuickHoldModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <div className="w-full max-w-xl surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="flex items-start justify-between mb-4">
           <div>
             <p className="font-bold tracking-tight flex items-center gap-1.5">
@@ -2476,36 +2476,39 @@ function QuickHoldModal({
         </div>
 
         <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-ink-2 mb-1.5">
-              ชื่อลูกค้า
-            </label>
-            <Input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") submit();
-              }}
-              placeholder="ชื่อผู้ติดต่อ"
-              className="h-10"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-ink-2 mb-1.5">
-              เบอร์โทร{" "}
-              <span className="text-ink-3 font-normal">(ไม่บังคับ)</span>
-            </label>
-            <Input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") submit();
-              }}
-              placeholder="08x-xxx-xxxx"
-              className="h-10"
-            />
+          {/* Name and phone sit together — they are one thought ("ใครจอง") and
+           *  stacking them was the main reason this dialog ran so tall. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-ink-2 mb-1.5">
+                ชื่อลูกค้า
+              </label>
+              <Input
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submit();
+                }}
+                placeholder="ชื่อผู้ติดต่อ"
+                className="h-10"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-ink-2 mb-1.5">
+                เบอร์โทร{" "}
+                <span className="text-ink-3 font-normal">(ไม่บังคับ)</span>
+              </label>
+              <Input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submit();
+                }}
+                placeholder="08x-xxx-xxxx"
+                className="h-10"
+              />
+            </div>
           </div>
 
           <div>
@@ -2565,19 +2568,18 @@ function QuickHoldModal({
               onChange={(e) => setNote(e.target.value)}
               rows={2}
               placeholder="เช่น รอยืนยันจำนวนคน"
-              className="w-full px-3 py-2 rounded-input border border-line text-sm"
+              className="w-full px-3 py-2 rounded-input border border-line text-sm resize-none"
             />
           </div>
         </div>
 
-        <p className="mt-3 text-[11px] text-ink-3 leading-relaxed">
-          ระบบจะกันห้องไว้ให้ทันที แต่ยังไม่นับเป็นรายได้ และยังไม่ต้องกรอกยอดเงิน
-          — กรอกตอนกด &quot;ยืนยันการจอง&quot; ทีหลัง
-        </p>
+        {err && <p className="mt-3 text-[11px] text-red-600">{err}</p>}
 
-        {err && <p className="mt-2 text-[11px] text-red-600">{err}</p>}
-
-        <div className="mt-4 flex justify-end gap-2">
+        {/* Footer carries the explainer so the form column stays scannable. */}
+        <div className="mt-4 flex items-center gap-3">
+          <p className="text-[11px] text-ink-3 leading-snug flex-1">
+            กันห้องไว้ทันที · ยังไม่นับเป็นรายได้ · กรอกยอดเงินตอนกดยืนยันทีหลัง
+          </p>
           <Button variant="secondary" size="sm" onClick={onClose}>
             ยกเลิก
           </Button>
