@@ -174,6 +174,102 @@ export function bookingCancelledTemplate(opts: {
   return lines.join("\n");
 }
 
+/* ─── ติดจอง (tentative hold) ─── */
+
+/** Telegram template — a slot was held but not paid for. Deliberately worded
+ *  so nobody mistakes it for a confirmed booking: no amounts, no "จองใหม่". */
+export function bookingHoldTemplate(opts: {
+  reference: string;
+  customerName: string;
+  customerPhone?: string | null;
+  roomName: string;
+  startsAt: string;
+  endsAt: string;
+  expiresAt?: string | null;
+  note?: string | null;
+  createdBy?: string | null;
+}): string {
+  const lines: string[] = [];
+  lines.push("📌 <b>ติดจอง (ยังไม่ชำระเงิน)</b>");
+  lines.push(SEP);
+  lines.push(`🎫 <b>รหัสการจอง:</b> <code>${escapeHtml(opts.reference)}</code>`);
+  lines.push(`🏢 <b>ผู้จอง:</b> ${escapeHtml(opts.customerName)}`);
+  lines.push(
+    opts.customerPhone
+      ? `📞 <b>เบอร์โทร:</b> ${escapeHtml(opts.customerPhone)}`
+      : "📞 <b>เบอร์โทร:</b> ยังไม่มี — ตามเก็บด้วย",
+  );
+  lines.push(SEP);
+  lines.push(`🏛️ <b>ห้อง:</b> ${escapeHtml(opts.roomName)}`);
+  lines.push(`📅 <b>วันที่:</b> ${formatThaiFullDate(opts.startsAt)}`);
+  lines.push(`⏰ <b>เวลา:</b> ${formatTimeRange(opts.startsAt, opts.endsAt)}`);
+  lines.push(SEP);
+  lines.push("⚠️ <b>สถานะ:</b> กันห้องไว้แล้ว แต่ยังไม่ยืนยันและยังไม่ได้รับเงิน");
+  if (opts.expiresAt) {
+    lines.push(
+      `⌛ <b>ต้องยืนยันภายใน:</b> ${formatThaiFullDate(opts.expiresAt)} ${formatHour(opts.expiresAt)} น.`,
+    );
+  }
+  if (opts.note) {
+    lines.push("");
+    lines.push(`📝 <b>หมายเหตุ:</b> ${escapeHtml(opts.note)}`);
+  }
+  if (opts.createdBy) {
+    lines.push(SEP);
+    lines.push(`👨‍💼 <b>บันทึกโดย:</b> ${escapeHtml(opts.createdBy)}`);
+  }
+  return lines.join("\n");
+}
+
+/** Telegram template — hold is about to run out of time. */
+export function holdExpiringTemplate(opts: {
+  reference: string;
+  customerName: string;
+  customerPhone?: string | null;
+  roomName: string;
+  startsAt: string;
+  endsAt: string;
+  expiresAt: string;
+  hoursLeft: number;
+}): string {
+  const lines: string[] = [];
+  lines.push("⌛ <b>ติดจองใกล้หมดอายุ</b>");
+  lines.push(SEP);
+  lines.push(`🎫 <b>รหัสการจอง:</b> <code>${escapeHtml(opts.reference)}</code>`);
+  lines.push(`🏢 <b>ผู้จอง:</b> ${escapeHtml(opts.customerName)}`);
+  if (opts.customerPhone) {
+    lines.push(`📞 <b>เบอร์โทร:</b> ${escapeHtml(opts.customerPhone)}`);
+  }
+  lines.push(`🏛️ <b>ห้อง:</b> ${escapeHtml(opts.roomName)}`);
+  lines.push(`📅 <b>ใช้ห้อง:</b> ${formatThaiFullDate(opts.startsAt)} ${formatTimeRange(opts.startsAt, opts.endsAt)}`);
+  lines.push(SEP);
+  lines.push(
+    `⚠️ เหลือเวลาอีก <b>${opts.hoursLeft} ชั่วโมง</b> (ถึง ${formatThaiFullDate(opts.expiresAt)} ${formatHour(opts.expiresAt)} น.)`,
+  );
+  lines.push("ถ้าไม่ยืนยันหรือไม่ได้รับเงิน ระบบจะปล่อยห้องคืนอัตโนมัติ");
+  return lines.join("\n");
+}
+
+/** Telegram template — hold expired and the room was released. */
+export function holdExpiredTemplate(opts: {
+  reference: string;
+  customerName: string;
+  roomName: string;
+  startsAt: string;
+  endsAt: string;
+}): string {
+  const lines: string[] = [];
+  lines.push("🔓 <b>ติดจองหมดอายุ — ปล่อยห้องคืนแล้ว</b>");
+  lines.push(SEP);
+  lines.push(`🎫 <b>รหัสการจอง:</b> <code>${escapeHtml(opts.reference)}</code>`);
+  lines.push(`🏢 <b>ผู้จอง:</b> ${escapeHtml(opts.customerName)}`);
+  lines.push(`🏛️ <b>ห้อง:</b> ${escapeHtml(opts.roomName)}`);
+  lines.push(`📅 <b>ช่วงที่กันไว้:</b> ${formatThaiFullDate(opts.startsAt)} ${formatTimeRange(opts.startsAt, opts.endsAt)}`);
+  lines.push(SEP);
+  lines.push("ห้องนี้ว่างให้จองได้แล้ว");
+  return lines.join("\n");
+}
+
 /** Admin คืนห้องของผู้ใช้ภายในเพื่อให้ลูกค้าภายนอกจอง — รวมส่วนชดเชย. */
 export function adminRevokedBookingTemplate(opts: {
   reference: string;

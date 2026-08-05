@@ -10,6 +10,8 @@ const DEFAULT_POLICY = {
   max_advance_days: 90,
   deposit_pct: 30,
   payment_due_days: 3,
+  // ติดจอง: how many days a held slot survives before the cron releases it.
+  hold_expiry_days: 3,
   max_session_hours: 8,
   max_concurrent_bookings: 5,
   cancellation: {
@@ -45,7 +47,7 @@ export default async function PolicySettingsPage() {
             category="business"
             defaultValue={DEFAULT_POLICY}
             initial={value}
-            hint="กฎเหล่านี้ใช้ตอนสร้าง booking + ตอนคำนวณ refund + ตอนตรวจสิทธิ์ลดราคา"
+            hint="กฎเหล่านี้ใช้ตอนสร้าง booking + ตอนคำนวณ refund + ตอนตรวจสิทธิ์ลดราคา · hold_expiry_days = จำนวนวันที่ 'ติดจอง' ถูกกันห้องไว้ก่อนระบบปล่อยคืนอัตโนมัติ"
           />
         </SettingsShell>
       </div>

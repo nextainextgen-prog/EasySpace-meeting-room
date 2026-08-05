@@ -21,7 +21,12 @@ const groupedEvents = [
   {
     id: "booking",
     label: "จองห้องประชุม",
-    events: ["booking.created", "booking.updated", "booking.cancelled"],
+    events: [
+      "booking.created",
+      "booking.updated",
+      "booking.cancelled",
+      "booking.hold",
+    ],
   },
   {
     id: "finance",
@@ -40,6 +45,8 @@ const groupedEvents = [
     events: [
       "notification.time_alert",
       "notification.system",
+      "booking.hold_expiring",
+      "booking.hold_expired",
       "internal.member_joined",
       "internal.quota_alert",
       "internal.no_show",
@@ -56,6 +63,9 @@ const eventLabels: Record<string, string> = {
   "booking.created": "การจองใหม่",
   "booking.updated": "แก้ไขการจอง",
   "booking.cancelled": "ยกเลิกการจอง",
+  "booking.hold": "ติดจอง (ยังไม่ชำระ)",
+  "booking.hold_expiring": "ติดจองใกล้หมดอายุ",
+  "booking.hold_expired": "ติดจองหมดอายุ / ปล่อยห้องคืน",
   "payment.paid": "ชำระเต็มจำนวน",
   "payment.deposit": "ชำระมัดจำ",
   "payment.free": "รายการฟรี",

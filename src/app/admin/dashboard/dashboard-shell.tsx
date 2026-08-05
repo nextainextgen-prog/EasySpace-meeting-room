@@ -8,6 +8,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  Bookmark,
   Brain,
   Calendar,
   CalendarPlus,
@@ -440,7 +441,7 @@ function QuickActions({ role }: { role: Role }) {
 
 function KpisRow({ kpis }: { kpis: DashboardDeep["kpis"] }) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-4">
       <Link href="/admin/calendar">
         <KpiCard
           label="จองวันนี้"
@@ -471,6 +472,19 @@ function KpisRow({ kpis }: { kpis: DashboardDeep["kpis"] }) {
           hint={`${kpis.outstandingCount} รายการ`}
           icon={AlertTriangle}
           iconTone="warning"
+        />
+      </Link>
+      <Link href="/admin/calendar">
+        <KpiCard
+          label="ติดจอง"
+          value={`${kpis.holdCount} รายการ`}
+          hint={
+            kpis.holdExpiringSoon > 0
+              ? `ใกล้หมดอายุ ${kpis.holdExpiringSoon}`
+              : "ยังไม่ยืนยัน / ยังไม่จ่าย"
+          }
+          icon={Bookmark}
+          iconTone={kpis.holdExpiringSoon > 0 ? "warning" : "muted"}
         />
       </Link>
       <Link href="/admin/customers">

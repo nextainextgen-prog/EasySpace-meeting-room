@@ -14,8 +14,29 @@ import {
   bookingCreatedTemplate,
   paymentRecordedTemplate,
   bookingCancelledTemplate,
+  bookingHoldTemplate,
 } from "@/lib/templates/telegram";
+import { getCurrentProfile } from "@/lib/auth";
+import { getSettingValue } from "./settings";
+import {
+  DEFAULT_HOLD_EXPIRY_DAYS,
+  computeHoldExpiry,
+} from "@/lib/booking-hold";
 import type { PaymentMethod, PaymentStatus } from "@/lib/types";
+
+/** Resolve the configured hold grace period, falling back to the default. */
+async function resolveHoldExpiryDays(): Promise<number> {
+  try {
+    const policy = await getSettingValue<{ hold_expiry_days?: number }>(
+      "booking.policy",
+    );
+    const raw = policy?.hold_expiry_days;
+    if (typeof raw === "number" && raw > 0 && raw <= 90) return raw;
+  } catch {
+    // settings row missing / malformed — fall through to the default
+  }
+  return DEFAULT_HOLD_EXPIRY_DAYS;
+}
 
 /**
  * Live conflict check used by the booking form. Returns overlapping
@@ -186,6 +207,233 @@ export async function listActivePromotionsForBooking(): Promise<
     .map(({ starts_at: _s, status: _st, ...rest }) => rest);
 }
 
+/* ──────────────────── ติดจอง (tentative hold) ──────────────────── */
+
+const CreateHoldSchema = z.object({
+  roomId: z.string().uuid(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  customerName: z.string().trim().min(1, "ใส่ชื่อลูกค้า"),
+  // Deliberately optional: the whole point of a hold is to get it down while
+  // the customer is still on the phone. Missing phone is surfaced as a warning
+  // in the modal instead of blocking the save.
+  customerPhone: z.string().trim().optional(),
+  note: z.string().trim().optional(),
+  source: z
+    .enum([
+      "line",
+      "walk_in",
+      "referral_bni",
+      "facebook",
+      "google",
+      "email",
+      "other",
+    ])
+    .default("other"),
+});
+
+export type CreateHoldInput = z.infer<typeof CreateHoldSchema>;
+
+/**
+ * Create a ติดจอง — blocks the room, carries no money, expires on its own.
+ *
+ * Kept separate from `createBooking` because that schema requires amounts and
+ * a payment status, none of which exist yet when someone is simply holding a
+ * slot over the phone.
+ */
+export async function createHold(raw: CreateHoldInput) {
+  const parsed = CreateHoldSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false as const,
+      error: "validation",
+      issues: parsed.error.flatten(),
+    };
+  }
+  const input = parsed.data;
+
+  if (new Date(input.endsAt) <= new Date(input.startsAt)) {
+    return { ok: false as const, error: "invalid_time_range" };
+  }
+
+  const supabase = createSupabaseAdminClient();
+
+  // Conflict check first — cheaper than creating a customer we may not keep.
+  const { data: conflicts } = await supabase
+    .from("bookings")
+    .select("id, reference_code")
+    .eq("room_id", input.roomId)
+    .in("booking_status", ["pending", "confirmed", "in_use"])
+    .lt("starts_at", input.endsAt)
+    .gt("ends_at", input.startsAt);
+
+  if (conflicts && conflicts.length > 0) {
+    return {
+      ok: false as const,
+      error: "time_conflict",
+      conflicts: conflicts as Array<{ id: string; reference_code: string }>,
+    };
+  }
+
+  const customerId = await upsertCustomerForBooking({
+    name: input.customerName,
+    phone: input.customerPhone || undefined,
+    type: "individual",
+    source: input.source,
+  });
+
+  const reference = await generateBookingCode();
+  const holdDays = await resolveHoldExpiryDays();
+  const expiresAt = computeHoldExpiry(input.startsAt, holdDays);
+
+  const { data: bookingRow, error: insertErr } = await supabase
+    .from("bookings")
+    .insert({
+      reference_code: reference,
+      source: "external",
+      customer_id: customerId,
+      room_id: input.roomId,
+      starts_at: input.startsAt,
+      ends_at: input.endsAt,
+      base_amount: 0,
+      addons_amount: 0,
+      discount_amount: 0,
+      total_amount: 0,
+      deposit_amount: 0,
+      paid_amount: 0,
+      payment_status: "unpaid" as PaymentStatus,
+      booking_status: "pending",
+      hold_expires_at: expiresAt,
+      source_channel: input.source,
+      notes: input.note ?? null,
+    } as never)
+    .select("id")
+    .single();
+
+  if (insertErr) {
+    return { ok: false as const, error: insertErr.message };
+  }
+
+  const bookingId = (bookingRow as { id: string }).id;
+  const me = await getCurrentProfile();
+
+  await supabase.from("booking_audit_log").insert({
+    booking_id: bookingId,
+    action: "hold_created",
+    actor_id: me?.id ?? null,
+    actor_name: me?.full_name ?? me?.email ?? null,
+    changes: { hold_expires_at: expiresAt, note: input.note ?? null },
+  } as never);
+
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("name")
+    .eq("id", input.roomId)
+    .single();
+
+  void dispatchEvent(
+    "booking.hold",
+    bookingHoldTemplate({
+      reference,
+      customerName: input.customerName,
+      customerPhone: input.customerPhone || null,
+      roomName: (room as { name: string } | null)?.name ?? "—",
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      expiresAt,
+      note: input.note ?? null,
+      createdBy: me?.full_name ?? me?.email ?? null,
+    }),
+  );
+
+  await recordAudit({
+    action: "booking_created",
+    targetType: "booking",
+    targetId: bookingId,
+    changes: {
+      reference,
+      kind: "hold",
+      roomId: input.roomId,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      holdExpiresAt: expiresAt,
+    },
+  });
+
+  revalidatePath("/admin/calendar");
+  revalidatePath("/admin/bookings");
+  revalidatePath("/admin/dashboard");
+
+  return {
+    ok: true as const,
+    bookingId,
+    reference,
+    holdExpiresAt: expiresAt,
+    hasPhone: Boolean(input.customerPhone),
+  };
+}
+
+/** Load a hold so the full booking form can pre-fill from it. */
+export async function getHoldForConversion(bookingId: string): Promise<{
+  id: string;
+  reference_code: string;
+  room_id: string;
+  starts_at: string;
+  ends_at: string;
+  notes: string | null;
+  source_channel: string | null;
+  hold_expires_at: string | null;
+  customer_name: string;
+  customer_phone: string | null;
+  customer_email: string | null;
+  customer_type: string;
+} | null> {
+  if (!bookingId) return null;
+  const supabase = createSupabaseAdminClient();
+  const { data } = await supabase
+    .from("bookings")
+    .select(
+      "id, reference_code, room_id, starts_at, ends_at, notes, source_channel, hold_expires_at, booking_status, customer:customers(display_name, phone, email, type)",
+    )
+    .eq("id", bookingId)
+    .maybeSingle();
+  if (!data) return null;
+  const row = data as unknown as {
+    id: string;
+    reference_code: string;
+    room_id: string;
+    starts_at: string;
+    ends_at: string;
+    notes: string | null;
+    source_channel: string | null;
+    hold_expires_at: string | null;
+    booking_status: string;
+    customer: {
+      display_name: string;
+      phone: string | null;
+      email: string | null;
+      type: string;
+    } | null;
+  };
+  // Only a live hold is convertible — a confirmed/cancelled booking must go
+  // through the normal edit path instead.
+  if (row.booking_status !== "pending") return null;
+  return {
+    id: row.id,
+    reference_code: row.reference_code,
+    room_id: row.room_id,
+    starts_at: row.starts_at,
+    ends_at: row.ends_at,
+    notes: row.notes,
+    source_channel: row.source_channel,
+    hold_expires_at: row.hold_expires_at,
+    customer_name: row.customer?.display_name ?? "",
+    customer_phone: row.customer?.phone ?? null,
+    customer_email: row.customer?.email ?? null,
+    customer_type: row.customer?.type ?? "individual",
+  };
+}
+
 const CreateBookingSchema = z.object({
   customer: z.object({
     name: z.string().min(1, "ใส่ชื่อลูกค้า"),
@@ -222,6 +470,9 @@ const CreateBookingSchema = z.object({
     paymentStatus: z.enum(["unpaid", "deposit", "paid", "free"]),
     freeReason: z.string().optional(),
     notes: z.string().optional(),
+    // Set when this submission converts an existing ติดจอง into a real
+    // booking — the row is updated in place so the reference code survives.
+    holdId: z.string().uuid().optional(),
   }),
 });
 
@@ -260,14 +511,20 @@ export async function createBooking(raw: CreateBookingInput) {
     source: input.customer.source,
   });
 
-  // 2. Conflict check — overlapping bookings on the same room
-  const { data: conflicts } = await supabase
+  // 2. Conflict check — overlapping bookings on the same room. When converting
+  //    a hold, that hold is the row we are about to overwrite, so it must not
+  //    count as a conflict against itself.
+  let conflictQuery = supabase
     .from("bookings")
     .select("id, reference_code")
     .eq("room_id", input.booking.roomId)
     .in("booking_status", ["pending", "confirmed", "in_use"])
     .lt("starts_at", input.booking.endsAt)
     .gt("ends_at", input.booking.startsAt);
+  if (input.booking.holdId) {
+    conflictQuery = conflictQuery.neq("id", input.booking.holdId);
+  }
+  const { data: conflicts } = await conflictQuery;
 
   if (conflicts && conflicts.length > 0) {
     return {
@@ -277,8 +534,7 @@ export async function createBooking(raw: CreateBookingInput) {
     };
   }
 
-  // 3. Insert booking
-  const reference = await generateBookingCode();
+  // 3. Insert booking — or convert the hold in place, keeping its reference.
   const paidAmount =
     input.booking.paymentStatus === "paid"
       ? input.booking.totalAmount
@@ -286,40 +542,73 @@ export async function createBooking(raw: CreateBookingInput) {
         ? input.booking.depositAmount
         : 0;
 
-  const { data: bookingRow, error: insertErr } = await supabase
-    .from("bookings")
-    .insert({
-      reference_code: reference,
-      source: "external",
-      customer_id: customerId,
-      room_id: input.booking.roomId,
-      starts_at: input.booking.startsAt,
-      ends_at: input.booking.endsAt,
-      attendees_count: input.booking.attendees ?? null,
-      package_id: input.booking.packageId ?? null,
-      base_amount: input.booking.baseAmount,
-      addons_amount: input.booking.addonsAmount,
-      discount_amount: input.booking.discountAmount,
-      discount_note: input.booking.discountNote ?? null,
-      promotion_id: input.booking.promotionId ?? null,
-      total_amount: input.booking.totalAmount,
-      deposit_amount: input.booking.depositAmount,
-      paid_amount: paidAmount,
-      payment_status: input.booking.paymentStatus as PaymentStatus,
-      booking_status: "confirmed",
-      free_reason: input.booking.freeReason ?? null,
-      source_channel: input.customer.source,
-      source_detail: input.customer.sourceDetail ?? null,
-      notes: input.booking.notes ?? null,
-    } as never)
-    .select("id, reference_code")
-    .single();
+  const fields = {
+    customer_id: customerId,
+    room_id: input.booking.roomId,
+    starts_at: input.booking.startsAt,
+    ends_at: input.booking.endsAt,
+    attendees_count: input.booking.attendees ?? null,
+    package_id: input.booking.packageId ?? null,
+    base_amount: input.booking.baseAmount,
+    addons_amount: input.booking.addonsAmount,
+    discount_amount: input.booking.discountAmount,
+    discount_note: input.booking.discountNote ?? null,
+    promotion_id: input.booking.promotionId ?? null,
+    total_amount: input.booking.totalAmount,
+    deposit_amount: input.booking.depositAmount,
+    paid_amount: paidAmount,
+    payment_status: input.booking.paymentStatus as PaymentStatus,
+    booking_status: "confirmed",
+    free_reason: input.booking.freeReason ?? null,
+    source_channel: input.customer.source,
+    source_detail: input.customer.sourceDetail ?? null,
+    notes: input.booking.notes ?? null,
+  };
 
-  if (insertErr) {
-    return { ok: false as const, error: insertErr.message };
+  let bookingId: string;
+  let reference: string;
+
+  if (input.booking.holdId) {
+    const { data: converted, error: convertErr } = await supabase
+      .from("bookings")
+      .update({
+        ...fields,
+        // The room is no longer merely held — drop the expiry so the cron
+        // stops watching it.
+        hold_expires_at: null,
+      } as never)
+      .eq("id", input.booking.holdId)
+      .eq("booking_status", "pending")
+      .select("id, reference_code")
+      .maybeSingle();
+
+    if (convertErr) return { ok: false as const, error: convertErr.message };
+    // Gone or already confirmed by someone else while this form was open.
+    if (!converted) return { ok: false as const, error: "hold_not_found" };
+
+    const row = converted as { id: string; reference_code: string };
+    bookingId = row.id;
+    reference = row.reference_code;
+
+    // Addons/promotions are re-derived below; clear anything the hold carried.
+    await supabase.from("booking_addons").delete().eq("booking_id", bookingId);
+  } else {
+    reference = await generateBookingCode();
+    const { data: bookingRow, error: insertErr } = await supabase
+      .from("bookings")
+      .insert({
+        ...fields,
+        reference_code: reference,
+        source: "external",
+      } as never)
+      .select("id, reference_code")
+      .single();
+
+    if (insertErr) {
+      return { ok: false as const, error: insertErr.message };
+    }
+    bookingId = (bookingRow as { id: string }).id;
   }
-
-  const bookingId = (bookingRow as { id: string }).id;
 
   // 4. Booking addons
   if (input.booking.addonIds.length > 0) {
@@ -370,7 +659,7 @@ export async function createBooking(raw: CreateBookingInput) {
   // 6. Audit
   await supabase.from("booking_audit_log").insert({
     booking_id: bookingId,
-    action: "created",
+    action: input.booking.holdId ? "hold_confirmed" : "created",
     changes: { input },
   } as never);
 
@@ -491,6 +780,7 @@ export async function createBooking(raw: CreateBookingInput) {
     ok: true as const,
     bookingId,
     reference,
+    convertedFromHold: Boolean(input.booking.holdId),
   };
 }
 

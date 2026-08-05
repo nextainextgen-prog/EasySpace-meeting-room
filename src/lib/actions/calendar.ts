@@ -9,7 +9,26 @@ import {
   bookingCancelledTemplate,
   paymentRecordedTemplate,
 } from "@/lib/templates/telegram";
+import { getSettingValue } from "./settings";
+import {
+  DEFAULT_HOLD_EXPIRY_DAYS,
+  computeHoldExpiry,
+} from "@/lib/booking-hold";
 import type { PaymentMethod, PaymentStatus } from "@/lib/types";
+
+/** Resolve the configured ติดจอง grace period, falling back to the default. */
+async function resolveHoldExpiryDays(): Promise<number> {
+  try {
+    const policy = await getSettingValue<{ hold_expiry_days?: number }>(
+      "booking.policy",
+    );
+    const raw = policy?.hold_expiry_days;
+    if (typeof raw === "number" && raw > 0 && raw <= 90) return raw;
+  } catch {
+    // settings row missing / malformed — fall through to the default
+  }
+  return DEFAULT_HOLD_EXPIRY_DAYS;
+}
 
 /* ──────────────── Move / resize a booking ──────────────── */
 const MoveSchema = z.object({
@@ -389,10 +408,15 @@ export async function setBookingStatus(
 
   const { data: existing } = await supabase
     .from("bookings")
-    .select("id, booking_status")
+    .select("id, booking_status, starts_at, hold_expires_at")
     .eq("id", input.bookingId)
     .maybeSingle();
   if (!existing) return { ok: false as const, error: "not_found" };
+  const prev = existing as {
+    booking_status: string;
+    starts_at: string;
+    hold_expires_at: string | null;
+  };
 
   const patch: Record<string, unknown> = {
     booking_status: input.status,
@@ -400,6 +424,19 @@ export async function setBookingStatus(
   if (input.status === "cancelled") {
     patch.cancelled_at = new Date().toISOString();
     patch.cancelled_reason = input.reason ?? "ยกเลิกจาก modal";
+  }
+
+  // Keep the hold deadline in lockstep with the status: only a ติดจอง carries
+  // one, so entering 'pending' starts the clock and leaving it stops the clock.
+  if (input.status === "pending") {
+    if (!prev.hold_expires_at) {
+      patch.hold_expires_at = computeHoldExpiry(
+        prev.starts_at,
+        await resolveHoldExpiryDays(),
+      );
+    }
+  } else if (prev.hold_expires_at) {
+    patch.hold_expires_at = null;
   }
 
   const { error } = await supabase

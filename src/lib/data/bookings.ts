@@ -38,6 +38,9 @@ export interface Booking {
   metadata: Record<string, unknown>;
   cancelled_at: string | null;
   cancelled_reason: string | null;
+  /** Deadline for a ติดจอง (booking_status = 'pending') to be confirmed.
+   *  Null on every booking that is not a live hold. */
+  hold_expires_at: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

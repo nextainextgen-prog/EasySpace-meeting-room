@@ -379,7 +379,7 @@ function BookingsTab({ bookings }: { bookings: CustomerBookingRow[] }) {
 function BookingStatusBadge({ status }: { status: string }) {
   const map: Record<string, { tone: "success" | "warning" | "danger" | "info" | "muted"; label: string }> = {
     confirmed: { tone: "success", label: "ยืนยัน" },
-    pending: { tone: "warning", label: "รอยืนยัน" },
+    pending: { tone: "warning", label: "ติดจอง" },
     in_use: { tone: "info", label: "ใช้งาน" },
     completed: { tone: "muted", label: "เสร็จสิ้น" },
     cancelled: { tone: "danger", label: "ยกเลิก" },

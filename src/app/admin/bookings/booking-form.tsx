@@ -48,10 +48,28 @@ type Promo = {
   ends_at: string | null;
 };
 
+/** A ติดจอง being converted into a real booking — pre-fills the form and makes
+ *  the submit update that row in place instead of creating a second one. */
+export interface HoldPrefill {
+  id: string;
+  reference_code: string;
+  room_id: string;
+  starts_at: string;
+  ends_at: string;
+  notes: string | null;
+  source_channel: string | null;
+  hold_expires_at: string | null;
+  customer_name: string;
+  customer_phone: string | null;
+  customer_email: string | null;
+  customer_type: string;
+}
+
 interface Props {
   rooms: Array<Room & { packages: RoomPackage[] }>;
   addons: Addon[];
   promotions: Promo[];
+  hold?: HoldPrefill | null;
 }
 
 // Continuous 30-min slots from 07:00 to 21:30 (last slot ends 22:00)
@@ -173,27 +191,50 @@ function amenityIcon(name: string) {
   return <Check size={12} />;
 }
 
-export function BookingForm({ rooms, addons, promotions }: Props) {
+/** The 30-min slot labels a hold's time range covers, clamped to the grid. */
+function slotsFromRange(startsAt: string, endsAt: string): string[] {
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  const startMin = start.getHours() * 60 + start.getMinutes();
+  const endMin = end.getHours() * 60 + end.getMinutes();
+  return ALL_SLOTS.filter((s) => {
+    const m = slotToMinutes(s);
+    return m >= startMin && m < endMin;
+  });
+}
+
+function localDateKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function BookingForm({ rooms, addons, promotions, hold }: Props) {
   const today = new Date().toISOString().slice(0, 10);
 
   const [customer, setCustomer] = useState({
-    name: "",
-    phone: "",
-    email: "",
-    type: "company" as CType,
-    source: "line" as Source,
+    name: hold?.customer_name ?? "",
+    phone: hold?.customer_phone ?? "",
+    email: hold?.customer_email ?? "",
+    type: (hold?.customer_type as CType) ?? ("company" as CType),
+    source: (hold?.source_channel as Source) ?? ("line" as Source),
     sourceDetail: "",
   });
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(
+    hold ? localDateKey(hold.starts_at) : today,
+  );
   const [attendees, setAttendees] = useState(4);
-  const [selectedRoomId, setSelectedRoomId] = useState(rooms[0]?.id ?? "");
-  const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+  const [selectedRoomId, setSelectedRoomId] = useState(
+    hold?.room_id ?? rooms[0]?.id ?? "",
+  );
+  const [selectedSlots, setSelectedSlots] = useState<string[]>(
+    hold ? slotsFromRange(hold.starts_at, hold.ends_at) : [],
+  );
   const [hoverSlot, setHoverSlot] = useState<string | null>(null);
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [discount, setDiscount] = useState(0);
   const [discountNote, setDiscountNote] = useState("");
   const [promotionId, setPromotionId] = useState<string>("");
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(hold?.notes ?? "");
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("unpaid");
   const [depositAmount, setDepositAmount] = useState(0);
   const [paidAmountInput, setPaidAmountInput] = useState(0);
@@ -265,6 +306,9 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
   const bookedSlotSet = useMemo(() => {
     const set = new Set<string>();
     for (const b of dayBookings) {
+      // Don't grey out the hold we are converting — the user has to be able to
+      // adjust the very slots it currently occupies.
+      if (hold && b.id === hold.id) continue;
       const start = new Date(b.starts_at);
       const end = new Date(b.ends_at);
       const startMin = start.getHours() * 60 + start.getMinutes();
@@ -275,7 +319,7 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
       }
     }
     return set;
-  }, [dayBookings]);
+  }, [dayBookings, hold]);
 
   // ---------- Cost summary + smart package ----------
   const summary = useMemo(() => {
@@ -397,6 +441,9 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
           roomId: selectedRoomId,
           startsAt,
           endsAt,
+          // The hold being converted occupies exactly these slots; it is the
+          // row about to be overwritten, not a conflict with it.
+          excludeBookingId: hold?.id,
         });
         setConflicts(results);
       } finally {
@@ -404,7 +451,7 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
       }
     }, 300);
     return () => clearTimeout(handle);
-  }, [selectedSlots, selectedRoomId, date]);
+  }, [selectedSlots, selectedRoomId, date, hold?.id]);
 
   // ---------- Load day bookings whenever room/date changes ----------
   useEffect(() => {
@@ -525,6 +572,9 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
   }
 
   useEffect(() => {
+    // A hold conversion is already persisted server-side; auto-saving it as a
+    // local draft would leak its values into the next blank booking.
+    if (hold) return;
     const handle = setInterval(() => {
       if (selectedSlots.length > 0 || customer.name) persistDraft();
     }, 30_000);
@@ -532,8 +582,10 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateForDraft]);
 
-  // Restore draft on mount
+  // Restore draft on mount — skipped when converting a ติดจอง, whose values
+  // came from the database and must not be overwritten by a stale draft.
   useEffect(() => {
+    if (hold) return;
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
       if (!raw) return;
@@ -656,6 +708,7 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
           paymentStatus,
           freeReason: paymentStatus === "free" ? freeReason : undefined,
           notes: notes || undefined,
+          holdId: hold?.id,
         },
       });
 
@@ -669,13 +722,24 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
                 ? "กรุณากรอกเหตุผลฟรี"
                 : result.error === "discount_exceeds_subtotal"
                   ? "ส่วนลดมากกว่ายอดรวม"
-                  : `บันทึกไม่สำเร็จ: ${result.error}`,
+                  : result.error === "hold_not_found"
+                    ? "ติดจองนี้ถูกยืนยันหรือยกเลิกไปแล้ว — รีเฟรชหน้าแล้วลองใหม่"
+                    : `บันทึกไม่สำเร็จ: ${result.error}`,
         });
         return;
       }
 
       setFeedback({ kind: "success", reference: result.reference });
       clearDraft();
+
+      // A converted hold has nowhere left to go in this form — hand the user
+      // back to the calendar where the block is now a confirmed booking.
+      if (hold) {
+        setTimeout(() => {
+          window.location.href = "/admin/calendar";
+        }, 1200);
+        return;
+      }
 
       setSelectedSlots([]);
       setSelectedAddons([]);
@@ -711,6 +775,20 @@ export function BookingForm({ rooms, addons, promotions }: Props) {
           }}
           onClose={() => setFuzzyMatch(null)}
         />
+      )}
+
+      {hold && (
+        <div className="mb-5 rounded-card border border-violet-200 bg-violet-50/60 p-4">
+          <p className="text-sm font-bold tracking-tight text-violet-800">
+            กำลังยืนยันติดจอง{" "}
+            <code className="font-mono">{hold.reference_code}</code>
+          </p>
+          <p className="text-xs text-violet-700 mt-1 leading-relaxed">
+            ข้อมูลลูกค้า ห้อง และเวลา ถูกดึงมาจากติดจองเดิมแล้ว —
+            เลือกแพ็กเกจกับยอดเงินให้ครบ แล้วกดบันทึกเพื่อเปลี่ยนเป็นการจองจริง
+            รหัสการจองจะยังเป็นเลขเดิม
+          </p>
+        </div>
       )}
 
       <form

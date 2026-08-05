@@ -24,6 +24,7 @@ import {
   Mail,
   Send,
   Trash2,
+  Bookmark,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -32,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/cn";
 import { formatBaht, formatTime } from "@/lib/format";
+import { holdCountdownLabel } from "@/lib/booking-hold";
 import type { Room } from "@/lib/data/rooms";
 import type { BookingWithRelations } from "@/lib/data/bookings";
 import {
@@ -41,6 +43,7 @@ import {
   bulkNotifyTelegram,
   suggestAlternativeSlots,
 } from "@/lib/actions/calendar";
+import { createHold } from "@/lib/actions/bookings";
 import { BookingModal } from "./booking-modal";
 
 type ViewMode = "day" | "week" | "month" | "year" | "timeline" | "list";
@@ -79,7 +82,7 @@ const paymentStatusOpts = [
 ];
 const bookingStatusOpts = [
   { id: "confirmed", label: "ยืนยันแล้ว" },
-  { id: "pending", label: "รอ" },
+  { id: "pending", label: "ติดจอง" },
   { id: "in_use", label: "กำลังใช้" },
   { id: "completed", label: "เสร็จสิ้น" },
   { id: "cancelled", label: "ยกเลิก" },
@@ -167,6 +170,30 @@ function paymentColor(status: string) {
   }
 }
 
+const isHold = (b: { booking_status: string }) => b.booking_status === "pending";
+
+/**
+ * A ติดจอง must read as "not settled" from across the room, so it gets shape
+ * rather than another shade — a dashed outline plus diagonal hatching. Colour
+ * alone doesn't survive a glance at a wall of blocks.
+ */
+const HOLD_BLOCK_CLASS =
+  "!border-l-violet-400 !border !border-dashed !border-violet-400 bg-white";
+const HOLD_HATCH_STYLE: CSSProperties = {
+  backgroundImage:
+    "repeating-linear-gradient(45deg, rgba(139,92,246,0.13) 0 6px, transparent 6px 12px)",
+};
+
+/** Same treatment, condensed for the one-line chips in week/month/list views. */
+function blockClass(b: BookingWithRelations) {
+  return isHold(b)
+    ? HOLD_BLOCK_CLASS
+    : paymentColor(b.payment_status);
+}
+function blockStyle(b: BookingWithRelations): CSSProperties | undefined {
+  return isHold(b) ? HOLD_HATCH_STYLE : undefined;
+}
+
 interface Props {
   rooms: Room[];
   bookings: BookingWithRelations[];
@@ -206,6 +233,11 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
     | null
   >(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [quickHold, setQuickHold] = useState<{
+    roomId: string;
+    date: Date;
+    minuteOfDay: number;
+  } | null>(null);
 
   // Restore filter + presets on mount
   useEffect(() => {
@@ -575,9 +607,15 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
     (sum, b) => sum + Number(b.paid_amount ?? 0),
     0,
   );
+  // A ติดจอง has no money attached, so counting it as "ค้างชำระ" would
+  // inflate the follow-up list with rows nobody owes anything on yet.
   const outstandingCount = todayBookings.filter(
-    (b) => b.payment_status !== "paid" && b.payment_status !== "free",
+    (b) =>
+      !isHold(b) &&
+      b.payment_status !== "paid" &&
+      b.payment_status !== "free",
   ).length;
+  const holdCount = todayBookings.filter(isHold).length;
   const usedHrs = todayBookings.reduce((sum, b) => {
     const hrs =
       (new Date(b.ends_at).getTime() - new Date(b.starts_at).getTime()) /
@@ -723,6 +761,7 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
               revenue: revenueToday,
               utilisation: utilisationPct,
               outstanding: outstandingCount,
+              holds: holdCount,
             }}
             presets={presets}
             onApplyPreset={applyPreset}
@@ -754,6 +793,9 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
                 onEventDragStart={onEventDragStart}
                 onSlotDrop={onSlotDrop}
                 onResizeEnd={onResizeEnd}
+                onSlotClick={(roomId, minuteOfDay) =>
+                  setQuickHold({ roomId, date: current, minuteOfDay })
+                }
               />
             )}
 
@@ -890,6 +932,56 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
         />
       )}
 
+      {/* Quick ติดจอง — the fast path for "someone rang, hold the slot" */}
+      {quickHold && (
+        <QuickHoldModal
+          roomName={
+            rooms.find((r) => r.id === quickHold.roomId)?.name ?? "—"
+          }
+          date={quickHold.date}
+          minuteOfDay={quickHold.minuteOfDay}
+          onClose={() => setQuickHold(null)}
+          onCreate={async (payload) => {
+            const starts = new Date(quickHold.date);
+            starts.setHours(
+              Math.floor(quickHold.minuteOfDay / 60),
+              quickHold.minuteOfDay % 60,
+              0,
+              0,
+            );
+            const ends = new Date(
+              starts.getTime() + payload.durationMin * 60_000,
+            );
+            const r = await createHold({
+              roomId: quickHold.roomId,
+              startsAt: starts.toISOString(),
+              endsAt: ends.toISOString(),
+              customerName: payload.name,
+              customerPhone: payload.phone || undefined,
+              note: payload.note || undefined,
+              source: payload.source,
+            });
+            if (!r.ok) {
+              return r.error === "time_conflict"
+                ? "ช่วงเวลานี้มีการจองอื่นอยู่แล้ว"
+                : r.error === "validation"
+                  ? "กรุณาใส่ชื่อลูกค้า"
+                  : `ติดจองไม่สำเร็จ: ${r.error}`;
+            }
+            setQuickHold(null);
+            notify(
+              r.hasPhone
+                ? `ติดจองเรียบร้อย · ${r.reference}`
+                : `ติดจองเรียบร้อย · ${r.reference} (ยังไม่มีเบอร์โทร)`,
+            );
+            // The board is server-rendered from listBookingsForRange; a refresh
+            // is the honest way to pick up the new row with all its relations.
+            window.location.reload();
+            return null;
+          }}
+        />
+      )}
+
       {/* Conflict overlay */}
       {conflictOverlay && (
         <ConflictModal
@@ -950,6 +1042,7 @@ function CalendarSidebar({
     revenue: number;
     utilisation: number;
     outstanding: number;
+    holds: number;
   };
   presets: Preset[];
   onApplyPreset: (p: Preset) => void;
@@ -1013,6 +1106,12 @@ function CalendarSidebar({
             <span className="text-ink-2">ค้างชำระ</span>
             <span className="font-semibold tabular-nums text-red-600">
               {stats.outstanding} รายการ
+            </span>
+          </li>
+          <li className="flex justify-between">
+            <span className="text-ink-2">ติดจอง</span>
+            <span className="font-semibold tabular-nums text-violet-600">
+              {stats.holds} รายการ
             </span>
           </li>
         </ul>
@@ -1086,7 +1185,48 @@ function CalendarSidebar({
         onClear={() => setFilter((f) => ({ ...f, sources: [] }))}
       />
 
+      <ColorLegend />
     </aside>
+  );
+}
+
+/** Explains the block treatments — without it the hatched ติดจอง blocks read as
+ *  a rendering glitch rather than a status. */
+function ColorLegend() {
+  return (
+    <Card className="!p-4">
+      <p className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-semibold mb-3">
+        คำอธิบายสี
+      </p>
+      <ul className="space-y-2 text-[11px]">
+        <li className="flex items-center gap-2">
+          <span
+            className="w-7 h-4 rounded-sm border border-dashed border-violet-400 border-l-2 border-l-violet-400 shrink-0"
+            style={HOLD_HATCH_STYLE}
+          />
+          <span className="text-ink-2">ติดจอง — ยังไม่ยืนยัน / ยังไม่จ่าย</span>
+        </li>
+        <li className="flex items-center gap-2">
+          <span className="w-7 h-4 rounded-sm border-l-2 border-l-emerald-500 bg-emerald-50/70 shrink-0" />
+          <span className="text-ink-2">จ่ายครบแล้ว</span>
+        </li>
+        <li className="flex items-center gap-2">
+          <span className="w-7 h-4 rounded-sm border-l-2 border-l-amber-500 bg-amber-50/70 shrink-0" />
+          <span className="text-ink-2">มัดจำแล้ว</span>
+        </li>
+        <li className="flex items-center gap-2">
+          <span className="w-7 h-4 rounded-sm border-l-2 border-l-red-500 bg-red-50/70 shrink-0" />
+          <span className="text-ink-2">ยืนยันแล้ว แต่ค้างจ่าย</span>
+        </li>
+        <li className="flex items-center gap-2">
+          <span className="w-7 h-4 rounded-sm border-l-2 border-l-slate-400 bg-slate-50/70 shrink-0" />
+          <span className="text-ink-2">ฟรี</span>
+        </li>
+      </ul>
+      <p className="mt-3 text-[10px] text-ink-3 leading-relaxed">
+        คลิกช่องว่างในมุมมองรายวันเพื่อติดจองได้ทันที
+      </p>
+    </Card>
   );
 }
 
@@ -1253,6 +1393,7 @@ function DayView({
   onEventDragStart,
   onSlotDrop,
   onResizeEnd,
+  onSlotClick,
 }: {
   date: Date;
   rooms: Room[];
@@ -1269,10 +1410,29 @@ function DayView({
     minuteOfDay: number,
   ) => void;
   onResizeEnd: (bookingId: string, durationMin: number) => void;
+  onSlotClick: (roomId: string, minuteOfDay: number) => void;
 }) {
   const todayBookings = bookings.filter((b) =>
     isSameDay(new Date(b.starts_at), date),
   );
+
+  // Which (room, minute) cells are already covered by a live booking. The
+  // event lookup below only finds bookings that *start* on a slot, so a
+  // multi-slot booking would otherwise leave its later slots looking free and
+  // invite a hold straight into a conflict.
+  const occupied = useMemo(() => {
+    const set = new Set<string>();
+    for (const b of todayBookings) {
+      if (b.booking_status === "cancelled" || b.booking_status === "no_show")
+        continue;
+      const sMin = minutesOf(b.starts_at);
+      const eMin = minutesOf(b.ends_at);
+      for (let m = SERVICE_START_MIN; m <= SERVICE_END_MIN; m += 30) {
+        if (m >= sMin && m < eMin) set.add(`${b.room_id}-${m}`);
+      }
+    }
+    return set;
+  }, [todayBookings]);
 
   // Now indicator
   const [now, setNow] = useState(new Date());
@@ -1364,6 +1524,12 @@ function DayView({
                     return true;
                   return start.getHours() === h && start.getMinutes() === m;
                 });
+                // The 22:00 row closes the day — there is no 30-min block left
+                // to hold, so it stays inert rather than offering a zero-length
+                // booking.
+                const free =
+                  !occupied.has(`${room.id}-${slotMin}`) &&
+                  SERVICE_END_MIN - slotMin >= 30;
                 return (
                   <div
                     key={`${slot}-${room.id}`}
@@ -1372,8 +1538,23 @@ function DayView({
                       e.dataTransfer.dropEffect = "move";
                     }}
                     onDrop={(e) => onSlotDrop(e, room.id, date, slotMin)}
-                    className="border-l border-line-soft min-h-[36px] relative hover:bg-primary-50/30 transition"
+                    onClick={
+                      free ? () => onSlotClick(room.id, slotMin) : undefined
+                    }
+                    title={free ? "คลิกเพื่อติดจองช่องนี้" : undefined}
+                    className={cn(
+                      "border-l border-line-soft min-h-[36px] relative transition",
+                      free
+                        ? "cursor-pointer hover:bg-violet-50/60 group/slot"
+                        : "hover:bg-primary-50/30",
+                    )}
                   >
+                    {free && !isLunch && (
+                      <span className="pointer-events-none absolute inset-0 hidden group-hover/slot:flex items-center justify-center gap-1 text-[10px] font-medium text-violet-600">
+                        <Bookmark size={10} strokeWidth={2} />
+                        ติดจอง
+                      </span>
+                    )}
                     {event && (
                       <EventCard
                         event={event}
@@ -1465,6 +1646,8 @@ function EventCard({
   const lockMeta = (event.metadata as { lock?: { by_name: string } } | undefined)
     ?.lock;
   const cancelled = event.booking_status === "cancelled";
+  const hold = isHold(event);
+  const holdCountdown = hold ? holdCountdownLabel(event.hold_expires_at) : null;
 
   return (
     <div
@@ -1480,12 +1663,17 @@ function EventCard({
       }}
       className={cn(
         "absolute inset-x-1 top-1 rounded-card-sm border-l-2 px-2 py-1 shadow-card hover:shadow-card-hover transition cursor-pointer group overflow-hidden",
-        paymentColor(event.payment_status),
+        hold ? HOLD_BLOCK_CLASS : paymentColor(event.payment_status),
         selected && "!ring-2 ring-primary-600 ring-offset-1",
         cancelled && "opacity-50 line-through",
       )}
-      style={{ height, zIndex: resizing ? 30 : undefined }}
+      style={{
+        height,
+        zIndex: resizing ? 30 : undefined,
+        ...(hold ? HOLD_HATCH_STYLE : {}),
+      }}
       title={[
+        hold ? "ติดจอง — ยังไม่ยืนยัน / ยังไม่ชำระ" : null,
         event.customer?.display_name ??
           event.member?.full_name ??
           event.internal_title ??
@@ -1494,10 +1682,24 @@ function EventCard({
         memberRoleLine(event),
         `${formatTime(event.starts_at)} – ${formatTime(event.ends_at)}`,
         event.reference_code,
+        holdCountdown ? `ต้องยืนยัน: ${holdCountdown}` : null,
       ]
         .filter(Boolean)
         .join(" · ")}
     >
+      {hold && (
+        <div className="flex items-center gap-1 mb-0.5">
+          <span className="inline-flex items-center gap-1 px-1.5 rounded-sm bg-violet-100 text-violet-700 text-[9px] font-bold tracking-tight">
+            <Bookmark size={8} strokeWidth={2.5} />
+            ติดจอง
+          </span>
+          {holdCountdown && height >= 50 && (
+            <span className="text-[9px] text-violet-600 tabular-nums truncate">
+              {holdCountdown}
+            </span>
+          )}
+        </div>
+      )}
       {/* Adaptive layout — short blocks (<70px) collapse to name + time only.
        *  Taller blocks add org/role/title/ref lines progressively. */}
       <div className="flex items-start gap-1 leading-tight">
@@ -1625,12 +1827,16 @@ function WeekView({
                   <button
                     key={b.id}
                     onClick={() => onOpen(b.id)}
+                    style={blockStyle(b)}
                     className={cn(
                       "w-full text-left px-2 py-1.5 rounded-input border-l-2 text-[11px]",
-                      paymentColor(b.payment_status),
+                      blockClass(b),
                     )}
                   >
                     <p className="font-semibold truncate">
+                      {isHold(b) && (
+                        <span className="text-violet-700">[ติดจอง] </span>
+                      )}
                       {bookingDisplayName(b)}
                     </p>
                     <p className="text-ink-3 tabular-nums">
@@ -1744,12 +1950,19 @@ function MonthView({
                 {list.slice(0, 3).map((b) => (
                   <div
                     key={b.id}
+                    style={blockStyle(b)}
                     className={cn(
                       "px-1.5 py-0.5 rounded text-[10px] truncate border-l-2",
-                      paymentColor(b.payment_status),
+                      blockClass(b),
                     )}
                   >
-                    {formatTime(b.starts_at)} · {bookingDisplayName(b)}
+                    {formatTime(b.starts_at)} ·{" "}
+                    {isHold(b) && (
+                      <span className="text-violet-700 font-semibold">
+                        [ติดจอง]{" "}
+                      </span>
+                    )}
+                    {bookingDisplayName(b)}
                   </div>
                 ))}
                 {list.length > 3 && (
@@ -1921,7 +2134,11 @@ function TimelineView({
                 const eMin = minutesOf(b.ends_at) - SERVICE_START_MIN;
                 const left = `${(sMin / totalMin) * 100}%`;
                 const width = `${((eMin - sMin) / totalMin) * 100}%`;
-                const style: CSSProperties = { left, width };
+                const style: CSSProperties = {
+                  left,
+                  width,
+                  ...blockStyle(b),
+                };
                 return (
                   <button
                     key={b.id}
@@ -1929,10 +2146,13 @@ function TimelineView({
                     style={style}
                     className={cn(
                       "absolute top-1.5 bottom-1.5 rounded-input border-l-2 px-2 text-left overflow-hidden",
-                      paymentColor(b.payment_status),
+                      blockClass(b),
                     )}
                   >
                     <p className="text-[10px] font-semibold truncate">
+                      {isHold(b) && (
+                        <span className="text-violet-700">[ติดจอง] </span>
+                      )}
                       {bookingDisplayName(b)}
                     </p>
                     <p className="text-[9px] text-ink-3 tabular-nums">
@@ -2028,20 +2248,26 @@ function ListView({
                     {formatBaht(Number(b.total_amount))}
                   </td>
                   <td className="px-3 py-2">
-                    <Badge
-                      tone={
-                        b.payment_status === "paid"
-                          ? "success"
-                          : b.payment_status === "deposit"
-                            ? "warning"
-                            : b.payment_status === "free"
-                              ? "muted"
-                              : "danger"
-                      }
-                      className="!text-[10px]"
-                    >
-                      {b.payment_status}
-                    </Badge>
+                    {isHold(b) ? (
+                      <Badge tone="primary" className="!text-[10px]">
+                        ติดจอง
+                      </Badge>
+                    ) : (
+                      <Badge
+                        tone={
+                          b.payment_status === "paid"
+                            ? "success"
+                            : b.payment_status === "deposit"
+                              ? "warning"
+                              : b.payment_status === "free"
+                                ? "muted"
+                                : "danger"
+                        }
+                        className="!text-[10px]"
+                      >
+                        {b.payment_status}
+                      </Badge>
+                    )}
                   </td>
                 </tr>
               );
@@ -2158,6 +2384,212 @@ function BulkActionBar({
         >
           <X size={14} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ───────── Quick ติดจอง ─────────
+ *  Deliberately minimal. This is filled in while the customer is still on the
+ *  phone, so it asks only for what is needed to hold the room and chase the
+ *  person later — everything about money waits until the hold is confirmed. */
+function QuickHoldModal({
+  roomName,
+  date,
+  minuteOfDay,
+  onClose,
+  onCreate,
+}: {
+  roomName: string;
+  date: Date;
+  minuteOfDay: number;
+  onClose: () => void;
+  /** Resolves to an error message, or null on success. */
+  onCreate: (payload: {
+    name: string;
+    phone: string;
+    note: string;
+    durationMin: number;
+    source: "line" | "walk_in" | "referral_bni" | "facebook" | "google" | "email" | "other";
+  }) => Promise<string | null>;
+}) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [note, setNote] = useState("");
+  const [durationMin, setDurationMin] = useState(60);
+  const [source, setSource] =
+    useState<"line" | "walk_in" | "referral_bni" | "facebook" | "google" | "email" | "other">(
+      "line",
+    );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Never offer a duration that would run past closing — a hold ending at
+  // 01:30 the next morning is nonsense the server would happily accept.
+  const maxDuration = SERVICE_END_MIN - minuteOfDay;
+  const durationChoices = [30, 60, 90, 120, 180, 240].filter(
+    (m) => m <= maxDuration,
+  );
+  const effectiveDuration = Math.min(durationMin, maxDuration);
+
+  const startLabel = `${String(Math.floor(minuteOfDay / 60)).padStart(2, "0")}:${String(minuteOfDay % 60).padStart(2, "0")}`;
+  const endMin = minuteOfDay + effectiveDuration;
+  const endLabel = `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
+
+  async function submit() {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    const message = await onCreate({
+      name: name.trim(),
+      phone: phone.trim(),
+      note: note.trim(),
+      durationMin: effectiveDuration,
+      source,
+    });
+    if (message) {
+      setErr(message);
+      setBusy(false);
+    }
+    // On success the parent closes/reloads — leave the button disabled.
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="font-bold tracking-tight flex items-center gap-1.5">
+              <Bookmark size={15} className="text-violet-600" strokeWidth={2} />
+              ติดจอง
+            </p>
+            <p className="text-xs text-ink-3 mt-0.5">
+              {roomName} · {fmtThaiDate(date)} · {startLabel}–{endLabel}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-3 hover:bg-surface-subtle hover:text-ink-1"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">
+              ชื่อลูกค้า
+            </label>
+            <Input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submit();
+              }}
+              placeholder="ชื่อผู้ติดต่อ"
+              className="h-10"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">
+              เบอร์โทร{" "}
+              <span className="text-ink-3 font-normal">(ไม่บังคับ)</span>
+            </label>
+            <Input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submit();
+              }}
+              placeholder="08x-xxx-xxxx"
+              className="h-10"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">
+              ระยะเวลา
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {durationChoices.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setDurationMin(m)}
+                  className={cn(
+                    "px-3 h-8 rounded-pill text-[11px] font-medium border transition tabular-nums",
+                    effectiveDuration === m
+                      ? "border-violet-500 bg-violet-50 text-violet-700"
+                      : "border-line bg-white hover:bg-surface-subtle text-ink-2",
+                  )}
+                >
+                  {m < 60 ? `${m} นาที` : `${m / 60} ชม.`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">
+              ช่องทาง
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {sourceOpts.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() =>
+                    setSource(s.id as typeof source)
+                  }
+                  className={cn(
+                    "px-3 h-8 rounded-pill text-[11px] font-medium border transition",
+                    source === s.id
+                      ? "border-violet-500 bg-violet-50 text-violet-700"
+                      : "border-line bg-white hover:bg-surface-subtle text-ink-2",
+                  )}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-2 mb-1.5">
+              หมายเหตุ <span className="text-ink-3 font-normal">(ไม่บังคับ)</span>
+            </label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+              placeholder="เช่น รอยืนยันจำนวนคน"
+              className="w-full px-3 py-2 rounded-input border border-line text-sm"
+            />
+          </div>
+        </div>
+
+        <p className="mt-3 text-[11px] text-ink-3 leading-relaxed">
+          ระบบจะกันห้องไว้ให้ทันที แต่ยังไม่นับเป็นรายได้ และยังไม่ต้องกรอกยอดเงิน
+          — กรอกตอนกด &quot;ยืนยันการจอง&quot; ทีหลัง
+        </p>
+
+        {err && <p className="mt-2 text-[11px] text-red-600">{err}</p>}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            ยกเลิก
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={submit}
+            disabled={!name.trim() || busy}
+          >
+            {busy ? "กำลังบันทึก..." : "ติดจอง"}
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -92,6 +92,10 @@ export interface DashboardDeep {
     activePromos: number;
     monthRevenue: number;
     pendingPayments: number;
+    /** ติดจอง ที่ยังไม่ถึงเวลาใช้ห้อง — pipeline, not revenue. */
+    holdCount: number;
+    /** ติดจอง ที่จะหมดอายุภายใน 24 ชม. */
+    holdExpiringSoon: number;
   };
   alerts: DashboardAlert[];
   feed: ActivityFeedItem[];
@@ -135,7 +139,7 @@ export async function getDashboardDeep(opts: {
     supabase
       .from("bookings")
       .select(
-        "id, customer_id, room_id, starts_at, ends_at, total_amount, paid_amount, payment_status, booking_status, reference_code, promotion_id, created_at",
+        "id, customer_id, room_id, starts_at, ends_at, total_amount, paid_amount, payment_status, booking_status, reference_code, promotion_id, hold_expires_at, created_at",
       )
       .gte("starts_at", yearAgo.toISOString()),
     supabase.from("rooms").select("id, name, color, hourly_rate, status, service_days"),
@@ -168,6 +172,25 @@ export async function getDashboardDeep(opts: {
       .limit(30),
   ]);
 
+  // `hold_expires_at` arrives with the ติดจอง migration. If this build ships
+  // before that migration runs, the column-list select above fails outright and
+  // the whole dashboard would silently render zeros — so fall back to the
+  // pre-migration column list and treat every booking as having no hold clock.
+  let bookingRows = bookingsRes.data as unknown as
+    | Array<Record<string, unknown>>
+    | null;
+  if (!bookingRows) {
+    const retry = await supabase
+      .from("bookings")
+      .select(
+        "id, customer_id, room_id, starts_at, ends_at, total_amount, paid_amount, payment_status, booking_status, reference_code, promotion_id, created_at",
+      )
+      .gte("starts_at", yearAgo.toISOString());
+    bookingRows = (
+      (retry.data ?? []) as unknown as Array<Record<string, unknown>>
+    ).map((b) => ({ ...b, hold_expires_at: null }));
+  }
+
   const customers = (customersRes.data ?? []) as unknown as Customer[];
   type BookingRow = {
     id: string;
@@ -181,9 +204,10 @@ export async function getDashboardDeep(opts: {
     booking_status: string;
     reference_code: string;
     promotion_id: string | null;
+    hold_expires_at: string | null;
     created_at: string;
   };
-  const bookings = (bookingsRes.data ?? []) as unknown as BookingRow[];
+  const bookings = (bookingRows ?? []) as unknown as BookingRow[];
   const rooms = (roomsRes.data ?? []) as unknown as Array<{
     id: string;
     name: string;
@@ -242,11 +266,14 @@ export async function getDashboardDeep(opts: {
     (s, b) => s + Number(b.total_amount ?? 0),
     0,
   );
+  // A ติดจอง (booking_status = 'pending') carries no money and nobody owes
+  // anything on it yet, so it must not surface as an outstanding balance.
   const outstanding = bookings.filter(
     (b) =>
       b.payment_status !== "paid" &&
       b.payment_status !== "free" &&
       b.booking_status !== "cancelled" &&
+      b.booking_status !== "pending" &&
       new Date(b.starts_at).getTime() <= nowMs,
   );
   const outstandingAmount = outstanding.reduce(
@@ -291,8 +318,24 @@ export async function getDashboardDeep(opts: {
 
   const pendingPayments = bookings.filter(
     (b) =>
-      b.payment_status === "unpaid" || b.payment_status === "deposit",
+      b.booking_status !== "pending" &&
+      b.booking_status !== "cancelled" &&
+      (b.payment_status === "unpaid" || b.payment_status === "deposit"),
   ).length;
+
+  // ติดจอง still ahead of us — the follow-up pipeline, tracked separately from
+  // anything financial.
+  const upcomingHolds = bookings.filter(
+    (b) =>
+      b.booking_status === "pending" &&
+      new Date(b.ends_at).getTime() >= nowMs,
+  );
+  const holdCount = upcomingHolds.length;
+  const holdExpiringSoon = upcomingHolds.filter((b) => {
+    if (!b.hold_expires_at) return false;
+    const t = new Date(b.hold_expires_at).getTime();
+    return t - nowMs <= dayMs;
+  }).length;
 
   // ===== Alerts =====
   const alerts: DashboardAlert[] = [];
@@ -305,6 +348,17 @@ export async function getDashboardDeep(opts: {
       detail: `รวม ฿${outstandingAmount.toLocaleString("th-TH")} — รีบติดตาม`,
       href: "/admin/finance",
       count: outstanding.length,
+    });
+  }
+  if (holdExpiringSoon > 0) {
+    alerts.push({
+      id: "holds-expiring",
+      level: "today",
+      category: "booking",
+      title: `${holdExpiringSoon} ติดจองใกล้หมดอายุ`,
+      detail: "ยืนยันหรือเก็บเงินภายในวันนี้ ไม่งั้นระบบจะปล่อยห้องคืน",
+      href: "/admin/calendar",
+      count: holdExpiringSoon,
     });
   }
   const expiringPromos = promos.filter((p) => {
@@ -600,6 +654,8 @@ export async function getDashboardDeep(opts: {
       activePromos,
       monthRevenue,
       pendingPayments,
+      holdCount,
+      holdExpiringSoon,
     },
     alerts,
     feed: feed.slice(0, 20),

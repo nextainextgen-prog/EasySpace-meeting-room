@@ -12,12 +12,16 @@ import {
   Plus,
   Upload,
   Trash2,
+  Bookmark,
+  ArrowRight,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { formatBaht } from "@/lib/format";
+import { holdCountdownLabel } from "@/lib/booking-hold";
 import {
   getBookingDetail,
   addBookingPayment,
@@ -275,20 +279,26 @@ function Header({
           <code className="font-mono font-bold text-primary-700">
             {b.reference_code as string}
           </code>
-          <Badge
-            tone={
-              status === "paid"
-                ? "success"
-                : status === "deposit"
-                  ? "warning"
-                  : status === "free"
-                    ? "muted"
-                    : "danger"
-            }
-            className="!text-[10px]"
-          >
-            {status}
-          </Badge>
+          {(b.booking_status as string) === "pending" ? (
+            <Badge tone="primary" className="!text-[10px]">
+              ติดจอง
+            </Badge>
+          ) : (
+            <Badge
+              tone={
+                status === "paid"
+                  ? "success"
+                  : status === "deposit"
+                    ? "warning"
+                    : status === "free"
+                      ? "muted"
+                      : "danger"
+              }
+              className="!text-[10px]"
+            >
+              {status}
+            </Badge>
+          )}
           {lockStatus.kind === "locked" && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-amber-50 border border-amber-200 text-amber-700 text-[10px]">
               <Lock size={10} /> ล็อกโดย {lockStatus.by}
@@ -391,6 +401,14 @@ function InfoTab({
 
   return (
     <div className="space-y-4">
+      {(b.booking_status as string) === "pending" && (
+        <HoldBanner
+          bookingId={b.id as string}
+          holdExpiresAt={(b.hold_expires_at as string | null) ?? null}
+          customerPhone={(customer.phone as string | null) ?? null}
+        />
+      )}
+
       <BookingStatusBar
         bookingId={b.id as string}
         currentStatus={(b.booking_status as BookingStatusKey) ?? "pending"}
@@ -837,6 +855,12 @@ function actionLabel(action: string) {
     case "payment_added":
     case "paid":
       return "บันทึกการชำระเงิน";
+    case "hold_created":
+      return "ติดจอง";
+    case "hold_confirmed":
+      return "ยืนยันติดจองเป็นการจองจริง";
+    case "hold_expired":
+      return "ติดจองหมดอายุ — ปล่อยห้องคืน";
     default:
       return action;
   }
@@ -999,6 +1023,69 @@ function Footer({
   );
 }
 
+/**
+ * The ติดจอง call-to-action. A hold has no package, no amounts and no payment
+ * status yet, so confirming it hands off to the full booking form (pre-filled
+ * from this hold) rather than flipping a flag here — that form owns the pricing
+ * engine, and re-deriving it inside the modal would fork the logic.
+ */
+function HoldBanner({
+  bookingId,
+  holdExpiresAt,
+  customerPhone,
+}: {
+  bookingId: string;
+  holdExpiresAt: string | null;
+  customerPhone: string | null;
+}) {
+  const countdown = holdCountdownLabel(holdExpiresAt);
+  const lapsed = holdExpiresAt
+    ? new Date(holdExpiresAt).getTime() <= Date.now()
+    : false;
+
+  return (
+    <div className="rounded-input border border-violet-200 bg-violet-50/60 p-3">
+      <div className="flex items-start gap-2">
+        <Bookmark
+          size={15}
+          className="text-violet-600 mt-0.5 shrink-0"
+          strokeWidth={2}
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold tracking-tight text-violet-800">
+            ติดจอง — กันห้องไว้ ยังไม่ได้รับเงิน
+          </p>
+          <p className="text-[11px] text-violet-700 mt-0.5">
+            {holdExpiresAt
+              ? lapsed
+                ? "เลยกำหนดยืนยันแล้ว — ระบบจะปล่อยห้องคืนในรอบตรวจถัดไป"
+                : `ต้องยืนยันภายใน ${new Date(holdExpiresAt).toLocaleString("th-TH", {
+                    day: "numeric",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })} น.${countdown ? ` (${countdown})` : ""}`
+              : "ไม่มีกำหนดหมดอายุ"}
+          </p>
+          {!customerPhone && (
+            <p className="text-[11px] text-amber-700 mt-1.5 flex items-center gap-1">
+              <AlertTriangle size={11} strokeWidth={2} />
+              ยังไม่มีเบอร์โทรลูกค้า — ตามเก็บไม่ได้ถ้าไม่กรอกเพิ่ม
+            </p>
+          )}
+        </div>
+      </div>
+      <a
+        href={`/admin/bookings?hold=${bookingId}`}
+        className="mt-3 w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-pill bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold tracking-tight transition"
+      >
+        ยืนยันการจอง (กรอกแพ็กเกจ + ยอดเงิน)
+        <ArrowRight size={13} strokeWidth={2.25} />
+      </a>
+    </div>
+  );
+}
+
 type BookingStatusKey =
   | "pending"
   | "confirmed"
@@ -1013,7 +1100,7 @@ const BOOKING_STATUS_OPTIONS: Array<{
   label: string;
   tone: "muted" | "info" | "warning" | "success" | "danger";
 }> = [
-  { id: "pending", label: "รอยืนยัน", tone: "muted" },
+  { id: "pending", label: "ติดจอง", tone: "muted" },
   { id: "confirmed", label: "ยืนยันแล้ว", tone: "info" },
   { id: "in_use", label: "กำลังใช้", tone: "warning" },
   { id: "completed", label: "เสร็จสิ้น", tone: "success" },
