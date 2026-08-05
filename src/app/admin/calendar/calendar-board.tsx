@@ -2456,7 +2456,9 @@ function QuickHoldModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-xl surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      {/* surface-card carries no padding of its own — every dialog has to add
+       *  it explicitly or the content sits flush against the border. */}
+      <div className="w-full max-w-xl surface-card !p-6 max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="flex items-start justify-between mb-4">
           <div>
             <p className="font-bold tracking-tight flex items-center gap-1.5">
@@ -2617,7 +2619,7 @@ function BulkPromptModal({
   const [value, setValue] = useState("");
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <div className="w-full max-w-md surface-card !p-6 max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="flex items-start justify-between mb-3">
           <div>
             <p className="font-bold tracking-tight">{title}</p>
@@ -2672,7 +2674,7 @@ function BulkConfirmModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md surface-card max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <div className="w-full max-w-md surface-card !p-6 max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="flex items-start justify-between mb-3">
           <div>
             <p className="font-bold tracking-tight">{title}</p>
