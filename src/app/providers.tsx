@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
+import { reloadForStaleDeployment } from "@/lib/stale-deployment";
 
 /**
  * App-wide TanStack Query client.
@@ -19,6 +24,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
+        // A tab left open across a deploy holds the previous build's Server
+        // Action IDs, so the calendar's background refresh starts failing every
+        // minute. Reload instead of quietly retrying against a build that no
+        // longer exists.
+        queryCache: new QueryCache({
+          onError: (error) => reloadForStaleDeployment(error),
+        }),
         defaultOptions: {
           queries: {
             // Server-rendered data is handed in as initialData; without a

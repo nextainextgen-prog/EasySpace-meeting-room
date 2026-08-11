@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { formatBaht } from "@/lib/format";
 import { holdCountdownLabel } from "@/lib/booking-hold";
+import { reloadForStaleDeployment } from "@/lib/stale-deployment";
 import {
   getBookingDetail,
   addBookingPayment,
@@ -63,6 +64,10 @@ export function BookingModal({ bookingId, onClose, onSaved }: Props) {
         const d = await getBookingDetail(bookingId);
         if (!cancelled) setDetail(d);
       } catch (e) {
+        // A tab open across a deploy fails here with an unrecoverable
+        // "Server Action not found". Reload rather than show the user a raw
+        // framework error and a retry button that can only fail again.
+        if (reloadForStaleDeployment(e)) return;
         if (!cancelled)
           setLoadError(
             e instanceof Error ? e.message : "โหลดข้อมูลการจองไม่สำเร็จ",
@@ -152,11 +157,7 @@ export function BookingModal({ bookingId, onClose, onSaved }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-1/40 backdrop-blur-sm p-4 print:p-0 print:bg-white">
       <div className="w-full max-w-3xl surface-card !p-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden">
         <div className="shrink-0">
-          <Header
-            detail={detail}
-            lockStatus={lockStatus}
-            onClose={onClose}
-          />
+          <Header detail={detail} lockStatus={lockStatus} onClose={onClose} />
         </div>
 
         <div className="shrink-0 px-5 border-b border-line bg-surface-subtle/30 flex gap-1 print:hidden">
@@ -446,22 +447,13 @@ function InfoTab({
                           : "—"
                   }
                 />
-                <Info
-                  label="Email"
-                  value={(member.email as string) ?? "—"}
-                />
-                <Info
-                  label="เบอร์"
-                  value={(member.phone as string) ?? "—"}
-                />
+                <Info label="Email" value={(member.email as string) ?? "—"} />
+                <Info label="เบอร์" value={(member.phone as string) ?? "—"} />
               </>
             )}
             {org && (
               <>
-                <Info
-                  label="องค์กร"
-                  value={(org.name as string) ?? "—"}
-                />
+                <Info label="องค์กร" value={(org.name as string) ?? "—"} />
                 <Info
                   label="ชื่อย่อ"
                   value={(org.short_name as string) ?? "—"}
@@ -483,32 +475,20 @@ function InfoTab({
         />
         <Info
           label="เบอร์"
-          value={
-            (customer.phone as string) ?? (member?.phone as string) ?? "—"
-          }
+          value={(customer.phone as string) ?? (member?.phone as string) ?? "—"}
         />
         <Info
           label="Email"
-          value={
-            (customer.email as string) ?? (member?.email as string) ?? "—"
-          }
+          value={(customer.email as string) ?? (member?.email as string) ?? "—"}
         />
-        <Info
-          label="ห้อง"
-          value={(room.name as string) ?? "—"}
-        />
+        <Info label="ห้อง" value={(room.name as string) ?? "—"} />
         <Info
           label="แพ็กเกจ"
           value={
-            pkg
-              ? `${pkg.name as string} · ${pkg.hours as number} ชม.`
-              : "—"
+            pkg ? `${pkg.name as string} · ${pkg.hours as number} ชม.` : "—"
           }
         />
-        <Info
-          label="ยอดรวม"
-          value={formatBaht(Number(b.total_amount))}
-        />
+        <Info label="ยอดรวม" value={formatBaht(Number(b.total_amount))} />
       </div>
 
       <div className="rounded-input bg-surface-subtle/50 border border-line-soft p-3">
@@ -655,21 +635,9 @@ function PaymentTab({
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-4 gap-2 text-xs">
-        <StatBox
-          label="ยอดรวม"
-          value={formatBaht(total)}
-          tone="default"
-        />
-        <StatBox
-          label="มัดจำ"
-          value={formatBaht(deposit)}
-          tone="warning"
-        />
-        <StatBox
-          label="ชำระแล้ว"
-          value={formatBaht(paid)}
-          tone="success"
-        />
+        <StatBox label="ยอดรวม" value={formatBaht(total)} tone="default" />
+        <StatBox label="มัดจำ" value={formatBaht(deposit)} tone="warning" />
+        <StatBox label="ชำระแล้ว" value={formatBaht(paid)} tone="success" />
         <StatBox
           label="คงเหลือ"
           value={formatBaht(remaining)}
@@ -760,9 +728,7 @@ function PaymentTab({
               />
             </div>
           </div>
-          {err && (
-            <p className="text-xs text-red-600 mt-2">{err}</p>
-          )}
+          {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
           <div className="flex justify-end mt-3">
             <Button
               variant="gradient"
@@ -791,9 +757,7 @@ function HistoryTab({ detail }: { detail: Detail }) {
   }>;
 
   if (audit.length === 0)
-    return (
-      <p className="text-sm text-ink-3 text-center py-8">ไม่มีประวัติ</p>
-    );
+    return <p className="text-sm text-ink-3 text-center py-8">ไม่มีประวัติ</p>;
 
   return (
     <ol className="relative pl-6 space-y-3 before:absolute before:left-2 before:top-1 before:bottom-1 before:w-px before:bg-line">
@@ -828,9 +792,7 @@ function HistoryTab({ detail }: { detail: Detail }) {
           {e.actor_name && (
             <p className="text-[11px] text-ink-3">โดย {e.actor_name}</p>
           )}
-          {e.reason && (
-            <p className="text-xs text-ink-2 mt-1">{e.reason}</p>
-          )}
+          {e.reason && <p className="text-xs text-ink-2 mt-1">{e.reason}</p>}
           {e.changes && (
             <pre className="mt-1 text-[10px] text-ink-3 bg-surface-subtle/60 rounded-input px-2 py-1.5 overflow-x-auto whitespace-pre-wrap">
               {JSON.stringify(e.changes, null, 2)}
@@ -1059,12 +1021,15 @@ function HoldBanner({
             {holdExpiresAt
               ? lapsed
                 ? "เลยกำหนดยืนยันแล้ว — ระบบจะปล่อยห้องคืนในรอบตรวจถัดไป"
-                : `ต้องยืนยันภายใน ${new Date(holdExpiresAt).toLocaleString("th-TH", {
-                    day: "numeric",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })} น.${countdown ? ` (${countdown})` : ""}`
+                : `ต้องยืนยันภายใน ${new Date(holdExpiresAt).toLocaleString(
+                    "th-TH",
+                    {
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    },
+                  )} น.${countdown ? ` (${countdown})` : ""}`
               : "ไม่มีกำหนดหมดอายุ"}
           </p>
           {!customerPhone && (
@@ -1087,12 +1052,7 @@ function HoldBanner({
 }
 
 type BookingStatusKey =
-  | "pending"
-  | "confirmed"
-  | "in_use"
-  | "completed"
-  | "cancelled"
-  | "no_show";
+  "pending" | "confirmed" | "in_use" | "completed" | "cancelled" | "no_show";
 type PaymentStatusKey = "unpaid" | "deposit" | "paid" | "free";
 
 const BOOKING_STATUS_OPTIONS: Array<{
@@ -1213,9 +1173,7 @@ function BookingStatusBar({
           เลือก &quot;จ่ายครบ&quot; จะปรับ paid_amount ให้เท่ายอดรวมโดยอัตโนมัติ
         </p>
       </div>
-      {err && (
-        <p className="text-[11px] text-red-600">{err}</p>
-      )}
+      {err && <p className="text-[11px] text-red-600">{err}</p>}
     </div>
   );
 }
@@ -1266,4 +1224,3 @@ function StatBox({
     </div>
   );
 }
-

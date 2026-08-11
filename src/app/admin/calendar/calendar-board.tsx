@@ -35,6 +35,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/cn";
 import { formatBaht, formatTime } from "@/lib/format";
 import { holdCountdownLabel } from "@/lib/booking-hold";
+import { reloadForStaleDeployment } from "@/lib/stale-deployment";
 import type { Room } from "@/lib/data/rooms";
 import type { BookingWithRelations } from "@/lib/data/bookings";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -361,6 +362,11 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
       mutatingRef.current += 1;
       try {
         return await fn();
+      } catch (e) {
+        // The tab is running a build the server has already replaced — every
+        // further action from it would fail the same way.
+        reloadForStaleDeployment(e);
+        throw e;
       } finally {
         mutatingRef.current -= 1;
         if (mutatingRef.current === 0) refreshBoard();
