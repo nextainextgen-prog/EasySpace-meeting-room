@@ -407,6 +407,8 @@ function InfoTab({
           bookingId={b.id as string}
           holdExpiresAt={(b.hold_expires_at as string | null) ?? null}
           customerPhone={(customer.phone as string | null) ?? null}
+          totalAmount={Number(b.total_amount ?? 0)}
+          onConfirmed={(patch) => onSaved(patch)}
         />
       )}
 
@@ -986,24 +988,55 @@ function Footer({
 }
 
 /**
- * The ติดจอง call-to-action. A hold has no package, no amounts and no payment
- * status yet, so confirming it hands off to the full booking form (pre-filled
- * from this hold) rather than flipping a flag here — that form owns the pricing
- * engine, and re-deriving it inside the modal would fork the logic.
+ * The ติดจอง call-to-action, which branches on whether the hold has a price.
+ *
+ * A hold taken from an empty calendar slot is just a name, a phone number and a
+ * duration — there is no package and no amount, so it genuinely has to go
+ * through the booking form, which owns the pricing engine. A hold saved from
+ * that same form already carries its package, add-ons and total, and sending it
+ * back through the form to re-enter what it already knows is busywork. That one
+ * confirms right here.
  */
 function HoldBanner({
   bookingId,
   holdExpiresAt,
   customerPhone,
+  totalAmount,
+  onConfirmed,
 }: {
   bookingId: string;
   holdExpiresAt: string | null;
   customerPhone: string | null;
+  totalAmount: number;
+  onConfirmed: (patch: Record<string, unknown>) => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const countdown = holdCountdownLabel(holdExpiresAt);
   const lapsed = holdExpiresAt
     ? new Date(holdExpiresAt).getTime() <= Date.now()
     : false;
+  const priced = totalAmount > 0;
+
+  async function confirmInPlace() {
+    setConfirming(true);
+    setError(null);
+    try {
+      const r = await setBookingStatus({ bookingId, status: "confirmed" });
+      if (!r.ok) {
+        setError(`ยืนยันไม่สำเร็จ: ${r.error}`);
+        setConfirming(false);
+        return;
+      }
+      // The server drops hold_expires_at when a hold leaves 'pending', so mirror
+      // that here — otherwise the countdown keeps ticking on a confirmed booking.
+      onConfirmed({ booking_status: "confirmed", hold_expires_at: null });
+    } catch (e) {
+      if (reloadForStaleDeployment(e)) return;
+      setError(e instanceof Error ? e.message : "ยืนยันไม่สำเร็จ");
+      setConfirming(false);
+    }
+  }
 
   return (
     <div className="rounded-input border border-violet-200 bg-violet-50/60 p-3">
@@ -1040,13 +1073,46 @@ function HoldBanner({
           )}
         </div>
       </div>
-      <a
-        href={`/admin/bookings?hold=${bookingId}`}
-        className="mt-3 w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-pill bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold tracking-tight transition"
-      >
-        ยืนยันการจอง (กรอกแพ็กเกจ + ยอดเงิน)
-        <ArrowRight size={13} strokeWidth={2.25} />
-      </a>
+      {error && (
+        <p className="mt-2 text-[11px] text-red-700 bg-red-50 border border-red-100 rounded-input px-2.5 py-1.5">
+          {error}
+        </p>
+      )}
+
+      {priced ? (
+        <>
+          <button
+            type="button"
+            onClick={confirmInPlace}
+            disabled={confirming}
+            className="mt-3 w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-pill bg-violet-600 hover:bg-violet-700 disabled:opacity-60 disabled:pointer-events-none text-white text-xs font-semibold tracking-tight transition"
+          >
+            {confirming
+              ? "กำลังยืนยัน..."
+              : `ยืนยันการจองนี้ · ${formatBaht(totalAmount)}`}
+          </button>
+          <a
+            href={`/admin/bookings?hold=${bookingId}`}
+            className="mt-2 w-full inline-flex items-center justify-center gap-1 text-[11px] font-medium text-violet-700 hover:text-violet-900 hover:underline underline-offset-2"
+          >
+            แก้ไขแพ็กเกจ / ยอดเงินก่อน
+            <ArrowRight size={11} strokeWidth={2.25} />
+          </a>
+        </>
+      ) : (
+        <>
+          <a
+            href={`/admin/bookings?hold=${bookingId}`}
+            className="mt-3 w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-pill bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold tracking-tight transition"
+          >
+            ยืนยันการจอง (กรอกแพ็กเกจ + ยอดเงิน)
+            <ArrowRight size={13} strokeWidth={2.25} />
+          </a>
+          <p className="mt-1.5 text-[11px] text-violet-700 text-center">
+            ติดจองนี้ยังไม่มียอดเงิน — ต้องเลือกแพ็กเกจก่อนถึงจะยืนยันได้
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -1099,7 +1165,14 @@ function BookingStatusBar({
     setErr(null);
     startTransition(async () => {
       const r = await setBookingStatus({ bookingId, status: next });
-      if (r.ok) onChanged({ booking_status: next });
+      // The server keeps the hold deadline in lockstep with the status —
+      // leaving 'pending' clears it. Mirror that so a confirmed booking stops
+      // showing a countdown until the next refetch.
+      if (r.ok)
+        onChanged({
+          booking_status: next,
+          ...(next === "pending" ? {} : { hold_expires_at: null }),
+        });
       else setErr(`เปลี่ยนสถานะไม่สำเร็จ: ${r.error}`);
     });
   }
