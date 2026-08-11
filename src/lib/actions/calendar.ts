@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { dispatchEvent } from "@/lib/server/notifications";
-import { getCurrentProfile } from "@/lib/auth";
+import { getCurrentProfile, requireRole } from "@/lib/auth";
+import { listBookingsForRange } from "@/lib/data/bookings";
 import {
   bookingCancelledTemplate,
   paymentRecordedTemplate,
@@ -28,6 +29,23 @@ async function resolveHoldExpiryDays(): Promise<number> {
     // settings row missing / malformed — fall through to the default
   }
   return DEFAULT_HOLD_EXPIRY_DAYS;
+}
+
+/* ──────────────── Live refetch for the calendar board ──────────────── */
+
+/**
+ * The same year window the page renders on the server, re-fetched on demand so
+ * a board left open picks up bookings other admins made. Mirrors
+ * `CalendarPage`'s range exactly — a narrower window here would make blocks
+ * appear to vanish on the first background refetch.
+ */
+export async function listCalendarBookings(year?: number) {
+  await requireRole("staff");
+  const y = year ?? new Date().getFullYear();
+  return listBookingsForRange({
+    start: new Date(y, 0, 1).toISOString(),
+    end: new Date(y, 11, 31, 23, 59, 59).toISOString(),
+  });
 }
 
 /* ──────────────── Move / resize a booking ──────────────── */
@@ -230,9 +248,10 @@ export async function getBookingDetail(id: string) {
       : Promise.resolve({ data: null }),
   ]);
 
-  const memberOrg = (memberOrgRes?.data ?? null) as
-    | { tier: string | null; department: { name: string } | null }
-    | null;
+  const memberOrg = (memberOrgRes?.data ?? null) as {
+    tier: string | null;
+    department: { name: string } | null;
+  } | null;
 
   const booking = {
     ...b,
@@ -652,7 +671,10 @@ export async function bulkSendInvoices(raw: z.infer<typeof BulkIdsSchema>) {
     room: { name: string };
     customer: { display_name: string; email: string | null };
   }>) {
-    const remaining = Math.max(0, Number(b.total_amount) - Number(b.paid_amount));
+    const remaining = Math.max(
+      0,
+      Number(b.total_amount) - Number(b.paid_amount),
+    );
     lines.push(
       `• <code>${b.reference_code}</code> · ${b.customer.display_name} · ค้าง ${remaining.toLocaleString()} บาท · ${b.customer.email ?? "no-email"}`,
     );
@@ -780,7 +802,11 @@ export async function suggestAlternativeSlots(input: {
     score: number;
   }> = [];
 
-  for (let start = SERVICE_START; start + duration <= SERVICE_END; start += SLOT_STEP) {
+  for (
+    let start = SERVICE_START;
+    start + duration <= SERVICE_END;
+    start += SLOT_STEP
+  ) {
     const end = start + duration;
     const conflict = taken.some((b) => {
       const bs = minutesOf(b.starts_at);
@@ -790,7 +816,7 @@ export async function suggestAlternativeSlots(input: {
     if (conflict) continue;
     const sDate = fromDayMinute(start);
     const eDate = fromDayMinute(end);
-    const score = Math.max(0, 100 - Math.abs(start - (10 * 60))); // prefer near 10am
+    const score = Math.max(0, 100 - Math.abs(start - 10 * 60)); // prefer near 10am
     const hh = (x: number) => String(Math.floor(x / 60)).padStart(2, "0");
     const mm = (x: number) => String(x % 60).padStart(2, "0");
     suggestions.push({

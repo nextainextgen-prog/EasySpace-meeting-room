@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, IBM_Plex_Sans_Thai } from "next/font/google";
+import { Providers } from "./providers";
 import "./globals.css";
 
 export const viewport: Viewport = {
@@ -59,7 +60,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="th" className={`${jakarta.variable} ${plexThai.variable}`}>
-      <body className="bg-surface-page text-ink-1 antialiased">{children}</body>
+      <body className="bg-surface-page text-ink-1 antialiased">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

@@ -95,14 +95,25 @@ const sources = [
   { id: "other", label: "อื่นๆ" },
 ] as const;
 
+/**
+ * "ติดจอง" is not a payment state — it is a *booking* state (`pending` + a
+ * hold deadline) — but it belongs in this row because that is the question the
+ * front desk is actually answering: has this slot been settled, or is the
+ * customer still at the quotation stage? Walk-ins use the room then pay;
+ * phone/LINE enquiries pay first. ติดจอง covers the gap between them.
+ */
 const paymentStatuses = [
   { id: "paid", label: "จ่ายแล้ว" },
   { id: "deposit", label: "มัดจำแล้ว" },
   { id: "unpaid", label: "ยังไม่มัดจำ" },
   { id: "free", label: "ฟรี" },
+  { id: "hold", label: "ติดจอง" },
 ] as const;
 
 type PaymentStatus = (typeof paymentStatuses)[number]["id"];
+
+/** A ติดจอง carries no money and is stored as `payment_status = 'unpaid'`. */
+const isHoldStatus = (s: PaymentStatus) => s === "hold";
 type Source = (typeof sources)[number]["id"];
 type CType = (typeof customerTypes)[number]["id"];
 
@@ -168,7 +179,10 @@ function computePromoDiscount(
   let raw = 0;
   if (promo.discount_type === "percentage") {
     raw = subtotal * (Number(promo.discount_value) / 100);
-  } else if (promo.discount_type === "fixed" || promo.discount_type === "voucher") {
+  } else if (
+    promo.discount_type === "fixed" ||
+    promo.discount_type === "voucher"
+  ) {
     raw = Number(promo.discount_value);
   } else {
     raw = Number(promo.discount_value);
@@ -219,9 +233,7 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
     source: (hold?.source_channel as Source) ?? ("line" as Source),
     sourceDetail: "",
   });
-  const [date, setDate] = useState(
-    hold ? localDateKey(hold.starts_at) : today,
-  );
+  const [date, setDate] = useState(hold ? localDateKey(hold.starts_at) : today);
   const [attendees, setAttendees] = useState(4);
   const [selectedRoomId, setSelectedRoomId] = useState(
     hold?.room_id ?? rooms[0]?.id ?? "",
@@ -290,8 +302,7 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
 
   // Fuzzy-match modal (similarity 0.70–0.85)
   const [fuzzyMatch, setFuzzyMatch] = useState<
-    | (typeof suggestions)[number]
-    | null
+    (typeof suggestions)[number] | null
   >(null);
   const fuzzyDismissedRef = useRef<Set<string>>(new Set());
 
@@ -332,7 +343,14 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
         packageName: undefined as string | undefined,
         savingsVsHourly: 0,
         nextPackage: undefined as
-          | { id: string; name: string; price: number; hours: number; extraHours: number; saveBaht: number }
+          | {
+              id: string;
+              name: string;
+              price: number;
+              hours: number;
+              extraHours: number;
+              saveBaht: number;
+            }
           | undefined,
       };
     }
@@ -361,7 +379,14 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
     // Smart "next package" recommendation
     const next = sortedPkg.find((p) => Number(p.hours) > hours);
     let nextPackage:
-      | { id: string; name: string; price: number; hours: number; extraHours: number; saveBaht: number }
+      | {
+          id: string;
+          name: string;
+          price: number;
+          hours: number;
+          extraHours: number;
+          saveBaht: number;
+        }
       | undefined;
     if (next) {
       // What if user extended to this package's hours, same hourly cost?
@@ -705,7 +730,11 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
           totalAmount: paymentStatus === "free" ? 0 : total,
           depositAmount:
             paymentStatus === "deposit" ? depositAmount : effectivePaid,
-          paymentStatus,
+          // A ติดจอง still quotes the full price — it just hasn't been paid, so
+          // it lands as an unpaid booking with `asHold` flipping the lifecycle
+          // to 'pending' + a hold deadline on the server.
+          paymentStatus: isHoldStatus(paymentStatus) ? "unpaid" : paymentStatus,
+          asHold: isHoldStatus(paymentStatus) || undefined,
           freeReason: paymentStatus === "free" ? freeReason : undefined,
           notes: notes || undefined,
           holdId: hold?.id,
@@ -959,9 +988,7 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
           <Card>
             <CardHeader>
               <CardTitle>เลือกห้อง</CardTitle>
-              <span className="text-xs text-ink-3">
-                {rooms.length} ห้อง
-              </span>
+              <span className="text-xs text-ink-3">{rooms.length} ห้อง</span>
             </CardHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {rooms.map((r) => (
@@ -983,9 +1010,7 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
                     style={{ background: room.color }}
                   />
                   <div className="flex-1">
-                    <p className="font-semibold tracking-tight">
-                      {room.name}
-                    </p>
+                    <p className="font-semibold tracking-tight">{room.name}</p>
                     <p className="text-xs text-ink-3 mt-0.5">
                       {room.capacity_min}–{room.capacity_max} ท่าน ·{" "}
                       {formatBaht(Number(room.hourly_rate))}/ชม.
@@ -1058,7 +1083,6 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
             )}
           </Card>
 
-
           {/* FINANCE */}
           <Card>
             <CardHeader>
@@ -1067,24 +1091,45 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
             <div className="space-y-4">
               <div>
                 <Label>สถานะการชำระเงิน</Label>
-                <div className="grid grid-cols-4 gap-2">
-                  {paymentStatuses.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setPaymentStatus(s.id)}
-                      className={cn(
-                        "py-2.5 rounded-input text-xs font-medium border transition",
-                        paymentStatus === s.id
-                          ? "border-primary-600 bg-primary-50 text-primary-700"
-                          : "border-line bg-white text-ink-2 hover:border-primary-200",
-                      )}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-5 gap-2">
+                  {paymentStatuses
+                    // Converting an existing ติดจอง is precisely the act of
+                    // leaving that state — offering it again would let a hold
+                    // be "confirmed" back into a hold.
+                    .filter((s) => !(hold && isHoldStatus(s.id)))
+                    .map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setPaymentStatus(s.id)}
+                        className={cn(
+                          "py-2.5 rounded-input text-xs font-medium border transition",
+                          paymentStatus === s.id
+                            ? isHoldStatus(s.id)
+                              ? "border-violet-500 bg-violet-50 text-violet-700"
+                              : "border-primary-600 bg-primary-50 text-primary-700"
+                            : "border-line bg-white text-ink-2 hover:border-primary-200",
+                        )}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
                 </div>
               </div>
+
+              {isHoldStatus(paymentStatus) && (
+                <div className="rounded-input border border-violet-200 bg-violet-50/60 px-3.5 py-3">
+                  <p className="text-xs font-semibold text-violet-800 tracking-tight">
+                    ติดจอง — กันห้องไว้ก่อน ยังไม่ชำระเงิน
+                  </p>
+                  <p className="text-[11px] text-violet-700 leading-relaxed mt-1">
+                    ใช้กับลูกค้าที่ติดต่อจองเข้ามาแต่ยังอยู่ขั้นตอนเสนอราคา
+                    ห้องจะถูกกันไม่ให้คนอื่นจองชน และขึ้นคำว่า
+                    &ldquo;ติดจอง&rdquo; ในปฏิทินให้ทุกคนเห็น
+                    ยอดเงินจะยังไม่ถูกนับเป็นรายได้จนกว่าจะยืนยัน
+                  </p>
+                </div>
+              )}
 
               {paymentStatus === "deposit" && (
                 <div className="grid grid-cols-2 gap-3">
@@ -1228,8 +1273,7 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
                     }}
                     placeholder="0"
                     className={cn(
-                      discountExceeds &&
-                        "!border-red-400 !ring-4 !ring-red-50",
+                      discountExceeds && "!border-red-400 !ring-4 !ring-red-50",
                     )}
                   />
                   {discountExceeds && (
@@ -1270,7 +1314,8 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
                 <CardTitle>
                   <span className="inline-flex items-center gap-2">
                     <CalendarIcon size={16} className="text-primary-600" />
-                    ปฏิทิน {format(new Date(`${date}T00:00:00+07:00`), "d MMM yyyy")}
+                    ปฏิทิน{" "}
+                    {format(new Date(`${date}T00:00:00+07:00`), "d MMM yyyy")}
                   </span>
                 </CardTitle>
                 <span className="text-[11px] text-ink-3">
@@ -1320,7 +1365,8 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
                         key={b.id}
                         className={cn(
                           "flex items-center gap-3 px-3 py-2 rounded-input border text-xs",
-                          isCompleted || (isPast && b.booking_status !== "in_use")
+                          isCompleted ||
+                            (isPast && b.booking_status !== "in_use")
                             ? "bg-surface-subtle/30 border-line-soft opacity-70"
                             : "bg-surface-subtle/60 border-line-soft",
                         )}
@@ -1469,9 +1515,7 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
                 ) : (
                   <>
                     <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                    <span>
-                      {"message" in feedback ? feedback.message : ""}
-                    </span>
+                    <span>{"message" in feedback ? feedback.message : ""}</span>
                   </>
                 )}
               </div>
@@ -1481,10 +1525,7 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
               <SummaryRow label="ห้อง" value={room?.name ?? "—"} />
               <SummaryRow
                 label="วันที่"
-                value={format(
-                  new Date(`${date}T00:00:00+07:00`),
-                  "d MMM yyyy",
-                )}
+                value={format(new Date(`${date}T00:00:00+07:00`), "d MMM yyyy")}
               />
               <SummaryRow
                 label="ช่วงเวลา"
@@ -1494,10 +1535,7 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
                     : "—"
                 }
               />
-              <SummaryRow
-                label="จำนวนชั่วโมง"
-                value={`${summary.hours} ชม.`}
-              />
+              <SummaryRow label="จำนวนชั่วโมง" value={`${summary.hours} ชม.`} />
               <SummaryRow
                 label={
                   summary.packageName
@@ -1533,9 +1571,7 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
               {discount > 0 && (
                 <SummaryRow
                   label={
-                    activePromo
-                      ? `ส่วนลด · ${activePromo.name}`
-                      : "ส่วนลด"
+                    activePromo ? `ส่วนลด · ${activePromo.name}` : "ส่วนลด"
                   }
                   value={`-${formatBaht(discount)}`}
                   tone="danger"
@@ -1548,6 +1584,12 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
                   {paymentStatus === "free" ? "ฟรี" : formatBaht(total)}
                 </span>
               </div>
+
+              {isHoldStatus(paymentStatus) && (
+                <p className="mt-2 text-[11px] text-violet-700 leading-relaxed">
+                  ราคานี้คือยอดที่เสนอลูกค้า ยังไม่นับเป็นรายได้จนกว่าจะยืนยัน
+                </p>
+              )}
 
               {paymentStatus !== "free" && total > 0 && (
                 <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
@@ -1613,9 +1655,7 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
                 variant="gradient"
                 className="flex-1"
                 iconLeft={<Save size={16} />}
-                disabled={
-                  pending || conflicts.length > 0 || discountExceeds
-                }
+                disabled={pending || conflicts.length > 0 || discountExceeds}
               >
                 {pending
                   ? "กำลังบันทึก..."
@@ -1623,7 +1663,9 @@ export function BookingForm({ rooms, addons, promotions, hold }: Props) {
                     ? "เวลาทับซ้อน"
                     : discountExceeds
                       ? "ส่วนลดเกิน"
-                      : "บันทึกการจอง"}
+                      : isHoldStatus(paymentStatus)
+                        ? "บันทึกติดจอง"
+                        : "บันทึกการจอง"}
               </Button>
             </div>
           </Card>
@@ -1732,10 +1774,7 @@ function SlotLegend() {
       {items.map((i) => (
         <span key={i.label} className="inline-flex items-center gap-1.5">
           <span
-            className={cn(
-              "inline-block w-3 h-3 rounded-sm border",
-              i.cls,
-            )}
+            className={cn("inline-block w-3 h-3 rounded-sm border", i.cls)}
           />
           {i.label}
         </span>
@@ -1767,12 +1806,9 @@ function SlotPicker({
     booking_status: string;
   }>;
 }) {
-  function statusForSlot(slot: string):
-    | "free"
-    | "picking"
-    | "picked"
-    | "booked"
-    | "in-use" {
+  function statusForSlot(
+    slot: string,
+  ): "free" | "picking" | "picked" | "booked" | "in-use" {
     const m = slotToMinutes(slot);
     const inUse = dayBookings.some((b) => {
       if (b.booking_status !== "in_use") return false;
@@ -1796,8 +1832,7 @@ function SlotPicker({
           {title}
         </p>
         <p className="text-[10px] text-ink-3">
-          แต่ละช่อง = 30 นาที · คลิก{" "}
-          <b className="text-ink-2">11:00</b> = จอง{" "}
+          แต่ละช่อง = 30 นาที · คลิก <b className="text-ink-2">11:00</b> = จอง{" "}
           <b className="text-ink-2">11:00–11:30</b>
         </p>
       </div>
@@ -1924,10 +1959,7 @@ function FuzzyMatchModal({
 
         <div className="flex-1 overflow-y-auto p-5 space-y-3">
           <div className="rounded-input border border-line bg-white p-3 flex items-start gap-3">
-            <Building2
-              size={18}
-              className="text-ink-3 mt-0.5 shrink-0"
-            />
+            <Building2 size={18} className="text-ink-3 mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-[10px] uppercase tracking-[0.06em] text-ink-3">
                 ลูกค้าเดิมในระบบ

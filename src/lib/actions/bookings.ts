@@ -76,13 +76,15 @@ export async function checkBookingConflict(input: {
   }
 
   const { data } = await query;
-  return ((data ?? []) as unknown as Array<{
-    id: string;
-    reference_code: string;
-    starts_at: string;
-    ends_at: string;
-    customer: { display_name: string } | null;
-  }>).map((b) => ({
+  return (
+    (data ?? []) as unknown as Array<{
+      id: string;
+      reference_code: string;
+      starts_at: string;
+      ends_at: string;
+      customer: { display_name: string } | null;
+    }>
+  ).map((b) => ({
     id: b.id,
     reference_code: b.reference_code,
     starts_at: b.starts_at,
@@ -142,17 +144,19 @@ export async function listDayBookings(input: {
     .gte("starts_at", dayStart)
     .lte("starts_at", dayEnd)
     .order("starts_at");
-  return ((data ?? []) as unknown as Array<{
-    id: string;
-    reference_code: string;
-    starts_at: string;
-    ends_at: string;
-    booking_status: string;
-    source: string;
-    customer: { display_name: string } | null;
-    member: { full_name: string } | null;
-    org: { name: string; short_name: string | null } | null;
-  }>).map((b) => ({
+  return (
+    (data ?? []) as unknown as Array<{
+      id: string;
+      reference_code: string;
+      starts_at: string;
+      ends_at: string;
+      booking_status: string;
+      source: string;
+      customer: { display_name: string } | null;
+      member: { full_name: string } | null;
+      org: { name: string; short_name: string | null } | null;
+    }>
+  ).map((b) => ({
     id: b.id,
     reference_code: b.reference_code,
     starts_at: b.starts_at,
@@ -190,19 +194,21 @@ export async function listActivePromotionsForBooking(): Promise<
     .lte("starts_at", nowIso)
     .order("created_at", { ascending: false });
 
-  return ((data ?? []) as unknown as Array<{
-    id: string;
-    name: string;
-    code: string | null;
-    discount_type: string;
-    discount_value: number;
-    max_discount: number | null;
-    min_order: number | null;
-    applicable_room_ids: string[];
-    starts_at: string;
-    ends_at: string | null;
-    status: string;
-  }>)
+  return (
+    (data ?? []) as unknown as Array<{
+      id: string;
+      name: string;
+      code: string | null;
+      discount_type: string;
+      discount_value: number;
+      max_discount: number | null;
+      min_order: number | null;
+      applicable_room_ids: string[];
+      starts_at: string;
+      ends_at: string | null;
+      status: string;
+    }>
+  )
     .filter((p) => !p.ends_at || new Date(p.ends_at) >= new Date())
     .map(({ starts_at: _s, status: _st, ...rest }) => rest);
 }
@@ -468,6 +474,10 @@ const CreateBookingSchema = z.object({
     totalAmount: z.number().nonnegative(),
     depositAmount: z.number().nonnegative().default(0),
     paymentStatus: z.enum(["unpaid", "deposit", "paid", "free"]),
+    // Save this as a ติดจอง instead of a confirmed booking: the room is blocked
+    // and the price is quoted, but nothing is settled and the slot releases
+    // itself if the customer never confirms.
+    asHold: z.boolean().optional(),
     freeReason: z.string().optional(),
     notes: z.string().optional(),
     // Set when this submission converts an existing ติดจอง into a real
@@ -492,6 +502,10 @@ export async function createBooking(raw: CreateBookingInput) {
   if (input.booking.paymentStatus === "free" && !input.booking.freeReason) {
     return { ok: false as const, error: "free_reason_required" };
   }
+
+  // Converting a hold is the act of leaving hold state; asking for both at once
+  // is contradictory, and honouring `asHold` would strand the row as pending.
+  const asHold = Boolean(input.booking.asHold) && !input.booking.holdId;
 
   if (
     input.booking.discountAmount >
@@ -542,6 +556,10 @@ export async function createBooking(raw: CreateBookingInput) {
         ? input.booking.depositAmount
         : 0;
 
+  const holdExpiresAt = asHold
+    ? computeHoldExpiry(input.booking.startsAt, await resolveHoldExpiryDays())
+    : null;
+
   const fields = {
     customer_id: customerId,
     room_id: input.booking.roomId,
@@ -558,7 +576,11 @@ export async function createBooking(raw: CreateBookingInput) {
     deposit_amount: input.booking.depositAmount,
     paid_amount: paidAmount,
     payment_status: input.booking.paymentStatus as PaymentStatus,
-    booking_status: "confirmed",
+    booking_status: asHold ? "pending" : "confirmed",
+    // Null for a normal booking; the hold-expiry cron only watches rows that
+    // carry a deadline. The convert-a-hold branch below overrides this to null
+    // explicitly, so a confirmed booking never keeps a stale deadline.
+    hold_expires_at: holdExpiresAt,
     free_reason: input.booking.freeReason ?? null,
     source_channel: input.customer.source,
     source_detail: input.customer.sourceDetail ?? null,
@@ -648,9 +670,12 @@ export async function createBooking(raw: CreateBookingInput) {
     } as never);
     // best-effort increment of uses_count
     try {
-      await supabase.rpc("increment_promotion_uses" as never, {
-        p_promotion_id: input.booking.promotionId,
-      } as never);
+      await supabase.rpc(
+        "increment_promotion_uses" as never,
+        {
+          p_promotion_id: input.booking.promotionId,
+        } as never,
+      );
     } catch {
       // optional RPC
     }
@@ -659,23 +684,38 @@ export async function createBooking(raw: CreateBookingInput) {
   // 6. Audit
   await supabase.from("booking_audit_log").insert({
     booking_id: bookingId,
-    action: input.booking.holdId ? "hold_confirmed" : "created",
+    action: input.booking.holdId
+      ? "hold_confirmed"
+      : asHold
+        ? "hold_created"
+        : "created",
     changes: { input },
   } as never);
 
   // 7. Customer aggregate refresh (cheap upsert)
   try {
-    await supabase.rpc("touch_customer_aggregates" as never, {
-      p_customer_id: customerId,
-    } as never);
+    await supabase.rpc(
+      "touch_customer_aggregates" as never,
+      {
+        p_customer_id: customerId,
+      } as never,
+    );
   } catch {
     // RPC may not exist yet — refresh in a follow-up migration.
   }
 
   // 8. Telegram
   const [{ data: room }, { data: customer }] = await Promise.all([
-    supabase.from("rooms").select("name, capacity_max").eq("id", input.booking.roomId).single(),
-    supabase.from("customers").select("display_name, phone, total_bookings, type").eq("id", customerId).single(),
+    supabase
+      .from("rooms")
+      .select("name, capacity_max")
+      .eq("id", input.booking.roomId)
+      .single(),
+    supabase
+      .from("customers")
+      .select("display_name, phone, total_bookings, type")
+      .eq("id", customerId)
+      .single(),
   ]);
   const r = room as { name: string; capacity_max: number | null } | null;
   const c = customer as {
@@ -685,7 +725,25 @@ export async function createBooking(raw: CreateBookingInput) {
     type: string;
   } | null;
 
-  if (r && c) {
+  if (r && c && asHold) {
+    // A ติดจอง is not a sale — announcing it as one would put money in the
+    // channel that nobody has collected, and would bury the deadline the team
+    // needs to chase.
+    void dispatchEvent(
+      "booking.hold",
+      bookingHoldTemplate({
+        reference,
+        customerName: c.display_name,
+        customerPhone: c.phone,
+        roomName: r.name,
+        startsAt: input.booking.startsAt,
+        endsAt: input.booking.endsAt,
+        expiresAt: holdExpiresAt!,
+        note: input.booking.notes ?? null,
+        createdBy: null,
+      }),
+    );
+  } else if (r && c) {
     const text = bookingCreatedTemplate({
       reference,
       customerName: c.display_name,
@@ -697,7 +755,9 @@ export async function createBooking(raw: CreateBookingInput) {
             ? "ข้าราชการ"
             : "บุคคลธรรมดา",
       roomName: r.name,
-      roomCapacity: r.capacity_max ? `สูงสุด ${r.capacity_max} ท่าน` : undefined,
+      roomCapacity: r.capacity_max
+        ? `สูงสุด ${r.capacity_max} ท่าน`
+        : undefined,
       startsAt: input.booking.startsAt,
       endsAt: input.booking.endsAt,
       attendees: input.booking.attendees,
@@ -791,9 +851,7 @@ export async function cancelBooking(input: {
   const supabase = createSupabaseAdminClient();
   const { data: existing, error: fetchErr } = await supabase
     .from("bookings")
-    .select(
-      `*, room:rooms(name), customer:customers(display_name)`,
-    )
+    .select(`*, room:rooms(name), customer:customers(display_name)`)
     .eq("id", input.bookingId)
     .single();
   if (fetchErr || !existing) {

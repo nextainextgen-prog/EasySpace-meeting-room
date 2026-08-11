@@ -5,6 +5,7 @@ import {
   useMemo,
   useEffect,
   useRef,
+  useCallback,
   type CSSProperties,
 } from "react";
 import {
@@ -36,12 +37,14 @@ import { formatBaht, formatTime } from "@/lib/format";
 import { holdCountdownLabel } from "@/lib/booking-hold";
 import type { Room } from "@/lib/data/rooms";
 import type { BookingWithRelations } from "@/lib/data/bookings";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   moveBooking,
   bulkCancelBookings,
   bulkSendInvoices,
   bulkNotifyTelegram,
   suggestAlternativeSlots,
+  listCalendarBookings,
 } from "@/lib/actions/calendar";
 import { createHold } from "@/lib/actions/bookings";
 import { BookingModal } from "./booking-modal";
@@ -72,7 +75,72 @@ for (let m = SERVICE_START_MIN; m <= SERVICE_END_MIN; m += 30) {
 }
 
 const PRESET_KEY = "easyspace.cal-presets.v1";
-const FILTER_KEY = "easyspace.cal-filter.v1";
+// v2 deliberately abandons every v1 payload. A stale saved filter (one stray
+// click on a สถานะการจอง chip) silently hid *every* booking on the board with
+// no visible cue, and it survived reloads — the calendar looked empty while the
+// data was sitting right there in the client. Bumping the key retires those.
+const FILTER_KEY = "easyspace.cal-filter.v2";
+
+/** Shared by the board and every mutation that needs to invalidate it. */
+const CALENDAR_QUERY_KEY = ["admin", "calendar", "bookings"] as const;
+
+const DEFAULT_FILTER: FilterState = {
+  search: "",
+  roomIds: [],
+  paymentStatuses: [],
+  bookingStatuses: ["confirmed", "pending", "in_use", "completed"],
+  sources: [],
+};
+
+/** True when the filter would hide anything at all. */
+function isFilterActive(f: FilterState) {
+  return (
+    f.search.trim() !== "" ||
+    f.roomIds.length > 0 ||
+    f.paymentStatuses.length > 0 ||
+    f.sources.length > 0 ||
+    f.bookingStatuses.length !== DEFAULT_FILTER.bookingStatuses.length ||
+    f.bookingStatuses.some((s) => !DEFAULT_FILTER.bookingStatuses.includes(s))
+  );
+}
+
+/**
+ * Rebuild a filter from untrusted localStorage. Anything that no longer exists
+ * — a deleted room, a status id from an older release — is dropped rather than
+ * carried forward, because a filter referencing only dead ids matches nothing
+ * and empties the board.
+ */
+function sanitizeFilter(raw: unknown, roomIds: Set<string>): FilterState {
+  const r = (raw ?? {}) as Partial<Record<keyof FilterState, unknown>>;
+  const strArr = (v: unknown, allowed?: Set<string>) =>
+    Array.isArray(v)
+      ? v.filter(
+          (x): x is string =>
+            typeof x === "string" && (!allowed || allowed.has(x)),
+        )
+      : [];
+
+  const bookingStatuses = strArr(
+    r.bookingStatuses,
+    new Set(bookingStatusOpts.map((o) => o.id)),
+  );
+
+  return {
+    search: typeof r.search === "string" ? r.search : "",
+    roomIds: strArr(r.roomIds, roomIds),
+    paymentStatuses: strArr(
+      r.paymentStatuses,
+      new Set(paymentStatusOpts.map((o) => o.id)),
+    ),
+    // An empty booking-status list means "show nothing" to the filter below,
+    // which is never what a restored session should silently mean.
+    bookingStatuses:
+      bookingStatuses.length > 0
+        ? bookingStatuses
+        : DEFAULT_FILTER.bookingStatuses,
+    sources: strArr(r.sources, new Set(sourceOpts.map((o) => o.id))),
+  };
+}
 
 const paymentStatusOpts = [
   { id: "paid", label: "จ่ายแล้ว" },
@@ -170,7 +238,8 @@ function paymentColor(status: string) {
   }
 }
 
-const isHold = (b: { booking_status: string }) => b.booking_status === "pending";
+const isHold = (b: { booking_status: string }) =>
+  b.booking_status === "pending";
 
 /**
  * A ติดจอง must read as "not settled" from across the room, so it gets shape
@@ -184,11 +253,41 @@ const HOLD_HATCH_STYLE: CSSProperties = {
     "repeating-linear-gradient(45deg, rgba(139,92,246,0.13) 0 6px, transparent 6px 12px)",
 };
 
+/**
+ * The status watermark printed inside every block.
+ *
+ * Colour alone was carrying the whole message, which fails for anyone glancing
+ * at the board from a metre away, printing it in greyscale, or not knowing the
+ * legend. The word goes in the block itself — in the block's own hue so the
+ * existing colour coding is reinforced rather than replaced.
+ */
+function statusWatermark(
+  b: BookingWithRelations,
+): { label: string; className: string } | null {
+  if (isHold(b)) return { label: "ติดจอง", className: "text-violet-500/70" };
+  switch (b.booking_status) {
+    case "cancelled":
+      return { label: "ยกเลิก", className: "text-slate-500/70" };
+    case "no_show":
+      return { label: "ไม่มา", className: "text-slate-500/70" };
+  }
+  switch (b.payment_status) {
+    case "paid":
+      return { label: "จ่ายแล้ว", className: "text-emerald-700/60" };
+    case "deposit":
+      return { label: "มัดจำแล้ว", className: "text-amber-700/60" };
+    case "unpaid":
+      return { label: "ยังไม่จ่าย", className: "text-red-700/55" };
+    case "free":
+      return { label: "ฟรี", className: "text-slate-600/60" };
+    default:
+      return null;
+  }
+}
+
 /** Same treatment, condensed for the one-line chips in week/month/list views. */
 function blockClass(b: BookingWithRelations) {
-  return isHold(b)
-    ? HOLD_BLOCK_CLASS
-    : paymentColor(b.payment_status);
+  return isHold(b) ? HOLD_BLOCK_CLASS : paymentColor(b.payment_status);
 }
 function blockStyle(b: BookingWithRelations): CSSProperties | undefined {
   return isHold(b) ? HOLD_HATCH_STYLE : undefined;
@@ -204,13 +303,7 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
     useState<BookingWithRelations[]>(initialBookings);
   const [current, setCurrent] = useState<Date>(new Date());
   const [view, setView] = useState<ViewMode>("day");
-  const [filter, setFilter] = useState<FilterState>({
-    search: "",
-    roomIds: [],
-    paymentStatuses: [],
-    bookingStatuses: ["confirmed", "pending", "in_use", "completed"],
-    sources: [],
-  });
+  const [filter, setFilter] = useState<FilterState>(DEFAULT_FILTER);
   const [openId, setOpenId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -223,15 +316,12 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
   const [bulkActionOpen, setBulkActionOpen] = useState<
     null | "cancel" | "telegram" | "invoice"
   >(null);
-  const [conflictOverlay, setConflictOverlay] = useState<
-    | {
-        bookingId: string;
-        roomId: string;
-        durationMin: number;
-        suggestions: Awaited<ReturnType<typeof suggestAlternativeSlots>>;
-      }
-    | null
-  >(null);
+  const [conflictOverlay, setConflictOverlay] = useState<{
+    bookingId: string;
+    roomId: string;
+    durationMin: number;
+    suggestions: Awaited<ReturnType<typeof suggestAlternativeSlots>>;
+  } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [quickHold, setQuickHold] = useState<{
     roomId: string;
@@ -239,16 +329,73 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
     minuteOfDay: number;
   } | null>(null);
 
+  // ----- Live server state -----
+  // `bookings` above stays the local working copy — every drag, resize and
+  // status change edits it optimistically before the server hears about it.
+  // TanStack Query sits behind it as the freshness source: it re-reads the year
+  // window on a timer and on tab focus, and the effect below folds that truth
+  // back into the working copy. Before this, a board opened in the morning
+  // showed the morning's bookings all day, and two admins could book the same
+  // room without either seeing the other.
+  const queryClient = useQueryClient();
+  const { data: serverBookings } = useQuery({
+    queryKey: CALENDAR_QUERY_KEY,
+    queryFn: () => listCalendarBookings(),
+    initialData: initialBookings,
+    refetchInterval: 60_000,
+    // A background tab doesn't need the traffic; refetchOnWindowFocus catches
+    // it up the moment the user comes back.
+    refetchIntervalInBackground: false,
+  });
+
+  // Guards the fold-back above against landing mid-mutation and reviving the
+  // pre-drag position for a beat before the server confirms it.
+  const mutatingRef = useRef(0);
+  const refreshBoard = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: CALENDAR_QUERY_KEY });
+  }, [queryClient]);
+
+  /** Run a server mutation, then pull the board back in line with the server. */
+  const withServerSync = useCallback(
+    async <T,>(fn: () => Promise<T>): Promise<T> => {
+      mutatingRef.current += 1;
+      try {
+        return await fn();
+      } finally {
+        mutatingRef.current -= 1;
+        if (mutatingRef.current === 0) refreshBoard();
+      }
+    },
+    [refreshBoard],
+  );
+
+  useEffect(() => {
+    if (mutatingRef.current > 0) return;
+    setBookings(serverBookings);
+  }, [serverBookings]);
+
+  // A router.refresh() re-renders this client component with fresh props but
+  // leaves the query cache untouched, so seed the cache from them as well.
+  useEffect(() => {
+    queryClient.setQueryData(CALENDAR_QUERY_KEY, initialBookings);
+  }, [initialBookings, queryClient]);
+
   // Restore filter + presets on mount
   useEffect(() => {
     try {
       const fp = localStorage.getItem(FILTER_KEY);
-      if (fp) setFilter((f) => ({ ...f, ...JSON.parse(fp) }));
+      if (fp) {
+        const roomIdSet = new Set(rooms.map((r) => r.id));
+        setFilter(sanitizeFilter(JSON.parse(fp), roomIdSet));
+      }
       const pp = localStorage.getItem(PRESET_KEY);
       if (pp) setPresets(JSON.parse(pp));
     } catch {
       // ignore
     }
+    // rooms is a server prop that is stable for the life of the board; the
+    // restore must run exactly once, on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     try {
@@ -286,7 +433,8 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
       )
         return false;
       if (q) {
-        const hay = `${b.reference_code} ${b.customer?.display_name ?? ""} ${b.customer?.phone ?? ""} ${b.internal_title ?? ""} ${b.member?.full_name ?? ""} ${b.member?.email ?? ""} ${b.org?.name ?? ""} ${b.org?.short_name ?? ""}`.toLowerCase();
+        const hay =
+          `${b.reference_code} ${b.customer?.display_name ?? ""} ${b.customer?.phone ?? ""} ${b.internal_title ?? ""} ${b.member?.full_name ?? ""} ${b.member?.email ?? ""} ${b.org?.name ?? ""} ${b.org?.short_name ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -430,12 +578,14 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
       ),
     );
 
-    const result = await moveBooking({
-      bookingId: drag.bookingId,
-      roomId,
-      startsAt: starts.toISOString(),
-      endsAt: ends.toISOString(),
-    });
+    const result = await withServerSync(() =>
+      moveBooking({
+        bookingId: drag.bookingId,
+        roomId,
+        startsAt: starts.toISOString(),
+        endsAt: ends.toISOString(),
+      }),
+    );
     if (!result.ok) {
       // Rollback
       setBookings((prev) =>
@@ -473,10 +623,7 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
     }
   }
 
-  async function onResizeEnd(
-    bookingId: string,
-    newDurationMin: number,
-  ) {
+  async function onResizeEnd(bookingId: string, newDurationMin: number) {
     const b = bookings.find((x) => x.id === bookingId);
     if (!b) return;
     const starts = new Date(b.starts_at);
@@ -488,12 +635,14 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
         x.id === bookingId ? { ...x, ends_at: ends.toISOString() } : x,
       ),
     );
-    const result = await moveBooking({
-      bookingId,
-      roomId: b.room_id,
-      startsAt: starts.toISOString(),
-      endsAt: ends.toISOString(),
-    });
+    const result = await withServerSync(() =>
+      moveBooking({
+        bookingId,
+        roomId: b.room_id,
+        startsAt: starts.toISOString(),
+        endsAt: ends.toISOString(),
+      }),
+    );
     if (!result.ok) {
       setBookings((prev) =>
         prev.map((x) =>
@@ -517,12 +666,14 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
     endsAt: string;
   }) {
     if (!conflictOverlay) return;
-    const r = await moveBooking({
-      bookingId: conflictOverlay.bookingId,
-      roomId: conflictOverlay.roomId,
-      startsAt: s.startsAt,
-      endsAt: s.endsAt,
-    });
+    const r = await withServerSync(() =>
+      moveBooking({
+        bookingId: conflictOverlay.bookingId,
+        roomId: conflictOverlay.roomId,
+        startsAt: s.startsAt,
+        endsAt: s.endsAt,
+      }),
+    );
     if (r.ok) {
       setBookings((prev) =>
         prev.map((b) =>
@@ -557,16 +708,16 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
   }
 
   async function runBulkCancel(reason: string) {
-    const r = await bulkCancelBookings({
-      ids: [...selectedIds],
-      reason,
-    });
+    const r = await withServerSync(() =>
+      bulkCancelBookings({
+        ids: [...selectedIds],
+        reason,
+      }),
+    );
     if (r.ok) {
       setBookings((prev) =>
         prev.map((b) =>
-          selectedIds.has(b.id)
-            ? { ...b, booking_status: "cancelled" }
-            : b,
+          selectedIds.has(b.id) ? { ...b, booking_status: "cancelled" } : b,
         ),
       );
       clearSelection();
@@ -578,7 +729,9 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
   }
 
   async function runBulkTelegram(message: string) {
-    const r = await bulkNotifyTelegram({ ids: [...selectedIds], message });
+    const r = await withServerSync(() =>
+      bulkNotifyTelegram({ ids: [...selectedIds], message }),
+    );
     if (r.ok) {
       clearSelection();
       setBulkActionOpen(null);
@@ -589,7 +742,9 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
   }
 
   async function runBulkInvoice() {
-    const r = await bulkSendInvoices({ ids: [...selectedIds] });
+    const r = await withServerSync(() =>
+      bulkSendInvoices({ ids: [...selectedIds] }),
+    );
     if (r.ok) {
       clearSelection();
       setBulkActionOpen(null);
@@ -598,6 +753,9 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
       notify(`ส่งไม่สำเร็จ: ${r.error}`);
     }
   }
+
+  const filterActive = isFilterActive(filter);
+  const hiddenCount = bookings.length - filtered.length;
 
   // ----- Stats for sidebar -----
   const todayBookings = filtered.filter((b) =>
@@ -611,9 +769,7 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
   // inflate the follow-up list with rows nobody owes anything on yet.
   const outstandingCount = todayBookings.filter(
     (b) =>
-      !isHold(b) &&
-      b.payment_status !== "paid" &&
-      b.payment_status !== "free",
+      !isHold(b) && b.payment_status !== "paid" && b.payment_status !== "free",
   ).length;
   const holdCount = todayBookings.filter(isHold).length;
   const usedHrs = todayBookings.reduce((sum, b) => {
@@ -741,6 +897,31 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
           </Button>
         </div>
       </Card>
+
+      {/* A filter that hides everything used to be invisible: the grid just
+       *  looked empty and stayed that way across reloads, because the selection
+       *  lives in localStorage. Say it out loud, and make undoing it one click. */}
+      {filterActive && (
+        <div className="flex items-center gap-3 rounded-card border border-amber-200 bg-amber-50 px-4 py-2.5 print:hidden">
+          <Filter
+            size={14}
+            strokeWidth={2}
+            className="text-amber-600 shrink-0"
+          />
+          <p className="text-[13px] text-amber-900 flex-1 tracking-tight">
+            <span className="font-semibold">ตัวกรองทำงานอยู่</span>
+            {hiddenCount > 0 && (
+              <> — ซ่อนการจองอยู่ {hiddenCount.toLocaleString()} รายการ</>
+            )}
+          </p>
+          <button
+            onClick={() => setFilter(DEFAULT_FILTER)}
+            className="text-[12px] font-semibold text-amber-800 hover:text-amber-950 underline underline-offset-2 shrink-0"
+          >
+            ล้างตัวกรองทั้งหมด
+          </button>
+        </div>
+      )}
 
       <div
         className={cn(
@@ -871,10 +1052,12 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
             setContextMenu(null);
           }}
           onCancel={async () => {
-            const r = await bulkCancelBookings({
-              ids: [contextMenu.bookingId],
-              reason: "ยกเลิกจาก context menu",
-            });
+            const r = await withServerSync(() =>
+              bulkCancelBookings({
+                ids: [contextMenu.bookingId],
+                reason: "ยกเลิกจาก context menu",
+              }),
+            );
             if (r.ok) {
               setBookings((prev) =>
                 prev.map((b) =>
@@ -935,9 +1118,7 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
       {/* Quick ติดจอง — the fast path for "someone rang, hold the slot" */}
       {quickHold && (
         <QuickHoldModal
-          roomName={
-            rooms.find((r) => r.id === quickHold.roomId)?.name ?? "—"
-          }
+          roomName={rooms.find((r) => r.id === quickHold.roomId)?.name ?? "—"}
           date={quickHold.date}
           minuteOfDay={quickHold.minuteOfDay}
           onClose={() => setQuickHold(null)}
@@ -952,15 +1133,17 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
             const ends = new Date(
               starts.getTime() + payload.durationMin * 60_000,
             );
-            const r = await createHold({
-              roomId: quickHold.roomId,
-              startsAt: starts.toISOString(),
-              endsAt: ends.toISOString(),
-              customerName: payload.name,
-              customerPhone: payload.phone || undefined,
-              note: payload.note || undefined,
-              source: payload.source,
-            });
+            const r = await withServerSync(() =>
+              createHold({
+                roomId: quickHold.roomId,
+                startsAt: starts.toISOString(),
+                endsAt: ends.toISOString(),
+                customerName: payload.name,
+                customerPhone: payload.phone || undefined,
+                note: payload.note || undefined,
+                source: payload.source,
+              }),
+            );
             if (!r.ok) {
               return r.error === "time_conflict"
                 ? "ช่วงเวลานี้มีการจองอื่นอยู่แล้ว"
@@ -1000,6 +1183,10 @@ export function CalendarBoard({ rooms, bookings: initialBookings }: Props) {
             setBookings((prev) =>
               prev.map((b) => (b.id === updated.id ? { ...b, ...updated } : b)),
             );
+            // The modal patches only the fields it edited; a refetch picks up
+            // everything the server derived from them (paid_amount rolled up
+            // from a payment, hold_expires_at cleared on confirm).
+            refreshBoard();
           }}
         />
       )}
@@ -1033,9 +1220,7 @@ function CalendarSidebar({
   setCurrent: (d: Date) => void;
   view: ViewMode;
   filter: FilterState;
-  setFilter: (
-    update: FilterState | ((f: FilterState) => FilterState),
-  ) => void;
+  setFilter: (update: FilterState | ((f: FilterState) => FilterState)) => void;
   rooms: Room[];
   stats: {
     count: number;
@@ -1056,10 +1241,7 @@ function CalendarSidebar({
   void onSavePreset;
   void onDeletePreset;
 
-  function toggle<K extends keyof FilterState>(
-    key: K,
-    value: string,
-  ) {
+  function toggle<K extends keyof FilterState>(key: K, value: string) {
     setFilter((f) => {
       const arr = (f[key] as string[]) ?? [];
       const next = arr.includes(value)
@@ -1164,18 +1346,14 @@ function CalendarSidebar({
         options={paymentStatusOpts}
         selected={filter.paymentStatuses}
         onToggle={(v) => toggle("paymentStatuses", v)}
-        onClear={() =>
-          setFilter((f) => ({ ...f, paymentStatuses: [] }))
-        }
+        onClear={() => setFilter((f) => ({ ...f, paymentStatuses: [] }))}
       />
       <FilterChipGroup
         title="สถานะการจอง"
         options={bookingStatusOpts}
         selected={filter.bookingStatuses}
         onToggle={(v) => toggle("bookingStatuses", v)}
-        onClear={() =>
-          setFilter((f) => ({ ...f, bookingStatuses: [] }))
-        }
+        onClear={() => setFilter((f) => ({ ...f, bookingStatuses: [] }))}
       />
       <FilterChipGroup
         title="ที่มาลูกค้า"
@@ -1561,18 +1739,18 @@ function DayView({
                         selected={selectedIds.has(event.id)}
                         onToggleSelect={() => onToggleSelect(event.id)}
                         onOpen={() => onOpen(event.id)}
-                        onContextMenu={(x, y) =>
-                          onContextMenu(event.id, x, y)
-                        }
+                        onContextMenu={(x, y) => onContextMenu(event.id, x, y)}
                         onDragStart={(e) => onEventDragStart(event, e)}
                         onResizeEnd={(d) => onResizeEnd(event.id, d)}
                       />
                     )}
-                    {isLunch && !event && (
-                      <div className="absolute inset-1 rounded-input border border-dashed border-line text-[10px] text-ink-3 grid place-items-center">
-                        พัก
-                      </div>
-                    )}
+                    {isLunch &&
+                      !event &&
+                      !occupied.has(`${room.id}-${slotMin}`) && (
+                        <div className="absolute inset-1 rounded-input border border-dashed border-line text-[10px] text-ink-3 grid place-items-center">
+                          พัก
+                        </div>
+                      )}
                   </div>
                 );
               })}
@@ -1607,7 +1785,12 @@ function EventCard({
   // Clamp the start to the visible window so a booking anchored to the first
   // slot (one that began before SERVICE_START_MIN) doesn't render oversized.
   const windowStart = new Date(start);
-  windowStart.setHours(Math.floor(SERVICE_START_MIN / 60), SERVICE_START_MIN % 60, 0, 0);
+  windowStart.setHours(
+    Math.floor(SERVICE_START_MIN / 60),
+    SERVICE_START_MIN % 60,
+    0,
+    0,
+  );
   const effectiveStart = start < windowStart ? windowStart : start;
   const slotCount =
     (end.getTime() - effectiveStart.getTime()) / (30 * 60 * 1000);
@@ -1643,11 +1826,13 @@ function EventCard({
   }
 
   const height = baseHeight + (resizing ? extraPx : 0);
-  const lockMeta = (event.metadata as { lock?: { by_name: string } } | undefined)
-    ?.lock;
+  const lockMeta = (
+    event.metadata as { lock?: { by_name: string } } | undefined
+  )?.lock;
   const cancelled = event.booking_status === "cancelled";
   const hold = isHold(event);
   const holdCountdown = hold ? holdCountdownLabel(event.hold_expires_at) : null;
+  const watermark = statusWatermark(event);
 
   return (
     <div
@@ -1662,7 +1847,13 @@ function EventCard({
         onContextMenu(e.clientX, e.clientY);
       }}
       className={cn(
-        "absolute inset-x-1 top-1 rounded-card-sm border-l-2 px-2 py-1 shadow-card hover:shadow-card-hover transition cursor-pointer group overflow-hidden",
+        // z-10 is load-bearing: the card is absolutely positioned inside its
+        // 36px starting slot but overflows into the slots below, which are
+        // `relative` and later in DOM order. Without it those cells paint on
+        // top and swallow every click past the first 36px — the whole block
+        // looked un-clickable below its header, and the "พัก" placeholder drew
+        // over live bookings.
+        "absolute inset-x-1 top-1 z-10 rounded-card-sm border-l-2 px-2 py-1 shadow-card hover:shadow-card-hover transition cursor-pointer group overflow-hidden",
         hold ? HOLD_BLOCK_CLASS : paymentColor(event.payment_status),
         selected && "!ring-2 ring-primary-600 ring-offset-1",
         cancelled && "opacity-50 line-through",
@@ -1757,6 +1948,25 @@ function EventCard({
         <Badge tone="primary" className="!text-[9px] !px-1.5 mt-1">
           VIP
         </Badge>
+      )}
+
+      {/* Status watermark — sits in the block's empty bottom-right corner so it
+       *  never competes with the customer name. pointer-events-none keeps the
+       *  whole block draggable and clickable straight through it. */}
+      {watermark && (
+        <span
+          className={cn(
+            "pointer-events-none absolute bottom-1 right-2 font-bold tracking-tight select-none",
+            watermark.className,
+            height >= 120
+              ? "text-base"
+              : height >= 70
+                ? "text-xs"
+                : "text-[10px]",
+          )}
+        >
+          {watermark.label}
+        </span>
       )}
 
       {/* Resize handle */}
@@ -2106,7 +2316,9 @@ function TimelineView({
             {Array.from({ length: 14 }, (_, i) => {
               const min = SERVICE_START_MIN + i * 60;
               return (
-                <span key={i}>{`${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`}</span>
+                <span
+                  key={i}
+                >{`${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`}</span>
               );
             })}
           </div>
@@ -2184,8 +2396,7 @@ function ListView({
   onOpen: (id: string) => void;
 }) {
   const sorted = [...bookings].sort(
-    (a, b) =>
-      new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime(),
+    (a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime(),
   );
   const roomMap = new Map(rooms.map((r) => [r.id, r]));
 
@@ -2230,12 +2441,8 @@ function ListView({
                       {b.reference_code}
                     </button>
                   </td>
-                  <td className="px-3 py-2 text-xs">
-                    {bookingDisplayName(b)}
-                  </td>
-                  <td className="px-3 py-2 text-xs">
-                    {room?.name ?? "—"}
-                  </td>
+                  <td className="px-3 py-2 text-xs">{bookingDisplayName(b)}</td>
+                  <td className="px-3 py-2 text-xs">{room?.name ?? "—"}</td>
                   <td className="px-3 py-2 text-xs tabular-nums">
                     {new Date(b.starts_at).toLocaleString("th-TH", {
                       day: "2-digit",
@@ -2274,7 +2481,10 @@ function ListView({
             })}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-xs text-ink-3">
+                <td
+                  colSpan={7}
+                  className="px-3 py-8 text-center text-xs text-ink-3"
+                >
                   ไม่มีรายการ
                 </td>
               </tr>
@@ -2378,10 +2588,7 @@ function BulkActionBar({
         >
           <Trash2 size={12} /> ยกเลิก
         </button>
-        <button
-          onClick={onClear}
-          className="text-ink-3 hover:text-ink-1 ml-1"
-        >
+        <button onClick={onClear} className="text-ink-3 hover:text-ink-1 ml-1">
           <X size={14} />
         </button>
       </div>
@@ -2410,17 +2617,29 @@ function QuickHoldModal({
     phone: string;
     note: string;
     durationMin: number;
-    source: "line" | "walk_in" | "referral_bni" | "facebook" | "google" | "email" | "other";
+    source:
+      | "line"
+      | "walk_in"
+      | "referral_bni"
+      | "facebook"
+      | "google"
+      | "email"
+      | "other";
   }) => Promise<string | null>;
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
   const [durationMin, setDurationMin] = useState(60);
-  const [source, setSource] =
-    useState<"line" | "walk_in" | "referral_bni" | "facebook" | "google" | "email" | "other">(
-      "line",
-    );
+  const [source, setSource] = useState<
+    | "line"
+    | "walk_in"
+    | "referral_bni"
+    | "facebook"
+    | "google"
+    | "email"
+    | "other"
+  >("line");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -2545,9 +2764,7 @@ function QuickHoldModal({
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() =>
-                    setSource(s.id as typeof source)
-                  }
+                  onClick={() => setSource(s.id as typeof source)}
                   className={cn(
                     "px-3 h-8 rounded-pill text-[11px] font-medium border transition",
                     source === s.id
@@ -2563,7 +2780,8 @@ function QuickHoldModal({
 
           <div>
             <label className="block text-xs font-medium text-ink-2 mb-1.5">
-              หมายเหตุ <span className="text-ink-3 font-normal">(ไม่บังคับ)</span>
+              หมายเหตุ{" "}
+              <span className="text-ink-3 font-normal">(ไม่บังคับ)</span>
             </label>
             <textarea
               value={note}
