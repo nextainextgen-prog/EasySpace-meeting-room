@@ -6,46 +6,45 @@
  * the browser is invisible to the server callback and the first Google login
  * fails while the retry works.
  *
+ * Note on lifetime: @supabase/ssr hard-overrides `maxAge` to its own 400-day
+ * default *after* spreading whatever we pass (see cookies.js `setCookieOptions`),
+ * so the session cookie always outlives the browser and there is no point
+ * setting a lifetime here. "จำการเข้าสู่ระบบ" is therefore enforced by
+ * <SessionKeeper />, which signs the user out on the next browser launch when
+ * they declined it.
+ *
  * Kept free of `next/headers` so the browser bundle can import it too.
  */
 
-/** Set when the user ticks "จำการเข้าสู่ระบบ" on /login. Plain (non-httpOnly)
- *  cookie on purpose: the browser client needs to read it before it can decide
- *  how long to persist the session it is about to create. */
+/** Records the user's "จำการเข้าสู่ระบบ" choice: "1" keep me signed in,
+ *  "0" declined, absent means never asked (OAuth logins). Plain, non-httpOnly
+ *  cookie on purpose — the browser needs to read it on the next launch. */
 export const REMEMBER_COOKIE = "easyspace.remember";
 
-/** 30 days — long enough that a building admin never re-types a password in a
- *  normal month, short enough that a shared front-desk browser eventually
- *  forgets. */
-export const REMEMBER_MAX_AGE = 60 * 60 * 24 * 30;
+/** How long the *preference* itself is remembered. */
+export const REMEMBER_MAX_AGE = 60 * 60 * 24 * 400;
 
 export type AuthCookieOptions = {
   path: string;
   sameSite: "lax";
   secure: boolean;
-  maxAge?: number;
 };
 
-/**
- * Without an explicit `maxAge`, @supabase/ssr writes the session as a *session
- * cookie* — it dies when the browser closes, which is why "จำการเข้าสู่ระบบ"
- * never actually remembered anything.
- */
-export function authCookieOptions(remember: boolean): AuthCookieOptions {
+export function authCookieOptions(): AuthCookieOptions {
   return {
     path: "/",
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    ...(remember ? { maxAge: REMEMBER_MAX_AGE } : {}),
   };
 }
 
-/** Reads the remember flag out of a raw `document.cookie` / `Cookie:` string. */
+/** Reads the remember flag out of a raw `document.cookie` / `Cookie:` string.
+ *  Absent counts as remembered: OAuth has no checkbox to decline. */
 export function readRememberFlag(cookieHeader: string | undefined): boolean {
-  if (!cookieHeader) return false;
-  return cookieHeader
+  if (!cookieHeader) return true;
+  return !cookieHeader
     .split(";")
-    .some((c) => c.trim() === `${REMEMBER_COOKIE}=1`);
+    .some((c) => c.trim() === `${REMEMBER_COOKIE}=0`);
 }
 
 /** True for any cookie Supabase owns, including the chunked `.0` / `.1` parts

@@ -7,7 +7,6 @@ import type { Database } from "@/lib/types/database";
 import {
   authCookieOptions,
   isSupabaseAuthCookie,
-  REMEMBER_COOKIE,
 } from "@/lib/integrations/supabase/cookie-options";
 
 const REGISTER_COOKIE = "easyspace.register_intent";
@@ -43,16 +42,12 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const nextOverride = searchParams.get("next");
 
-  // Google logins have no remember-me checkbox; treat them as remembered
-  // unless the user explicitly opted out on a previous password login.
-  const remember = request.cookies.get(REMEMBER_COOKIE)?.value !== "0";
-
   const pendingCookies: CookieToSet[] = [];
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookieOptions: authCookieOptions(remember),
+      cookieOptions: authCookieOptions(),
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -136,9 +131,7 @@ export async function GET(request: NextRequest) {
           (user.user_metadata?.name as string | undefined) ??
           undefined;
         const fullName =
-          intent.fullName?.trim() ||
-          googleName ||
-          user.email.split("@")[0];
+          intent.fullName?.trim() || googleName || user.email.split("@")[0];
 
         const res = await registerMember({
           inviteCode: intent.inviteCode,
@@ -211,7 +204,10 @@ export async function GET(request: NextRequest) {
       .select("id, profile_id")
       .eq("email", user.email.toLowerCase())
       .maybeSingle();
-    const matched = memberByEmail as { id: string; profile_id: string | null } | null;
+    const matched = memberByEmail as {
+      id: string;
+      profile_id: string | null;
+    } | null;
     hasMember = !!matched;
     // Self-heal: if the member was registered before the OAuth user existed
     // (email-form registration), link the auth user now so future logins
@@ -231,7 +227,9 @@ export async function GET(request: NextRequest) {
   // Send them back to the org's /book/<code> landing with the Google email
   // attached, so the banner can tell the user exactly which account didn't
   // match and offer a one-click register-with-this-email.
-  const emailParam = user.email ? `&email=${encodeURIComponent(user.email)}` : "";
+  const emailParam = user.email
+    ? `&email=${encodeURIComponent(user.email)}`
+    : "";
   if (lastInvite) {
     return redirectWithSession(
       `${origin}/book/${encodeURIComponent(lastInvite)}?error=not_registered${emailParam}`,

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Calendar } from "lucide-react";
 import { LoginForm } from "./login-form";
 import { getCurrentUser } from "@/lib/auth";
+import { cn } from "@/lib/cn";
 import { createSupabaseServerClient } from "@/lib/integrations/supabase/server";
 
 export const metadata = {
@@ -17,6 +18,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   signed_out: "ออกจากระบบแล้ว",
   session_expired: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่",
 };
+
+/** Reasons the user is back on this page that are not anybody's mistake. */
+const CALM_ERRORS = new Set(["signed_out", "session_expired"]);
 
 const NOTICE_MESSAGES: Record<string, string> = {
   reset_sent: "ส่งลิงก์รีเซ็ตรหัสผ่านไปยังอีเมลของคุณแล้ว",
@@ -65,8 +69,17 @@ export default async function LoginPage({
             สำหรับแอดมิน / เจ้าหน้าที่ตึก — เข้าด้วย Email + รหัสผ่าน
           </p>
 
+          {/* Signing out on purpose is not a failure — painting it red made a
+           *  normal logout look like something had gone wrong. */}
           {errorMessage && (
-            <div className="mt-5 rounded-input bg-red-50 border border-red-100 text-red-700 text-sm px-3.5 py-2.5">
+            <div
+              className={cn(
+                "mt-5 rounded-input border text-sm px-3.5 py-2.5",
+                CALM_ERRORS.has(params.error ?? "")
+                  ? "bg-surface-subtle border-line text-ink-2"
+                  : "bg-red-50 border-red-100 text-red-700",
+              )}
+            >
               {errorMessage}
             </div>
           )}

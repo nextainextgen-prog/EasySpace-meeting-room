@@ -10,6 +10,35 @@ import {
 } from "@/lib/integrations/supabase/client";
 import { cn } from "@/lib/cn";
 
+/**
+ * Ask the browser's password manager to remember this login.
+ *
+ * Chrome normally offers to save on a form submit that navigates. This form
+ * calls preventDefault() and routes client-side, so that moment never happens
+ * and the offer is frequently skipped — the login was saved on some machines
+ * and not others, with no pattern the team could see. The Credential
+ * Management API states the intent explicitly instead of hoping the heuristic
+ * fires. Unsupported browsers (Safari, Firefox) just fall through to their own
+ * heuristics.
+ */
+async function offerToSaveCredential(email: string, password: string) {
+  try {
+    const w = window as Window & {
+      PasswordCredential?: new (data: {
+        id: string;
+        password: string;
+        name?: string;
+      }) => Credential;
+    };
+    if (!w.PasswordCredential || !navigator.credentials?.store) return;
+    await navigator.credentials.store(
+      new w.PasswordCredential({ id: email, password, name: email }),
+    );
+  } catch {
+    // The user declined, or the browser refused — never block the login on it.
+  }
+}
+
 export function LoginForm({ next }: { next?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -23,13 +52,12 @@ export function LoginForm({ next }: { next?: string }) {
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      // Must run BEFORE signInWithPassword: the session cookie is created by
-      // that call, and it is the cookie's own max-age that decides whether the
-      // login survives a browser restart. Ticking the box after the fact did
-      // nothing — the old code only wrote a localStorage flag nobody read.
+      // The old code wrote a localStorage flag nobody ever read, so the box did
+      // nothing at all. It is now a real cookie that <SessionKeeper /> acts on
+      // at the next browser launch.
       setRememberPreference(remember);
 
-      const supabase = createSupabaseBrowserClient({ remember });
+      const supabase = createSupabaseBrowserClient();
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -42,6 +70,7 @@ export function LoginForm({ next }: { next?: string }) {
         );
         return;
       }
+      await offerToSaveCredential(email, password);
       router.replace(next ?? "/admin/bookings");
       router.refresh();
     });
@@ -49,19 +78,28 @@ export function LoginForm({ next }: { next?: string }) {
 
   return (
     <form onSubmit={signInWithEmail} className="mt-7 space-y-4">
+      {/* name + id are what the browser's password manager keys on. Without
+       *  them Chrome's heuristics often decline to offer "save password" at
+       *  all — which is why some machines remembered the login and others made
+       *  the team type it every single time. `username` (not `email`) is the
+       *  token Chrome expects for a login identifier. */}
       <PillInput
         icon={<Mail size={18} strokeWidth={1.75} />}
+        id="login-email"
+        name="email"
         type="email"
         placeholder="อีเมล"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         required
-        autoComplete="email"
+        autoComplete="username"
         disabled={pending}
       />
 
       <PillInput
         icon={<KeyRound size={18} strokeWidth={1.75} />}
+        id="login-password"
+        name="password"
         type={showPassword ? "text" : "password"}
         placeholder="รหัสผ่าน"
         value={password}
@@ -201,4 +239,3 @@ function PillInput({ icon, trailing, className, ...rest }: PillInputProps) {
     </div>
   );
 }
-
