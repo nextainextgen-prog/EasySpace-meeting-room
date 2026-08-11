@@ -1,4 +1,5 @@
 import { requireAuth } from "@/lib/auth";
+import { SessionKeeper } from "@/components/session-keeper";
 import { AppShell } from "./_components/shell";
 
 export default async function PortalLayout({
@@ -15,6 +16,7 @@ export default async function PortalLayout({
         avatarUrl: profile.avatar_url,
       }}
     >
+      <SessionKeeper />
       {children}
     </AppShell>
   );

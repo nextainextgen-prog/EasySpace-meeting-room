@@ -1,12 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { cookies } from "next/headers";
-import { createSupabaseServerClient } from "@/lib/integrations/supabase/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { recordLogin } from "@/lib/auth";
 import { registerMember } from "@/lib/actions/members";
+import type { Database } from "@/lib/types/database";
+import {
+  authCookieOptions,
+  isSupabaseAuthCookie,
+  REMEMBER_COOKIE,
+} from "@/lib/integrations/supabase/cookie-options";
 
 const REGISTER_COOKIE = "easyspace.register_intent";
 const LAST_INVITE_COOKIE = "easyspace.last_invite";
+
+type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 type RegisterIntent = {
   inviteCode: string;
@@ -22,18 +29,53 @@ type RegisterIntent = {
  *     redirecting to Google. We complete `registerMember` using the Google
  *     email and the form data carried in a cookie.
  *  2. **Member login** — existing member row → /app.
- *  3. **Admin login** — profile.role >= staff → /admin/dashboard.
+ *  3. **Admin login** — profile.role >= staff → /admin/bookings.
  *  4. Anything else → /member-login?error=not_registered (unregistered email).
+ *
+ * Cookies are collected and attached to the redirect response we actually
+ * return. Writing them through `cookies()` and then returning a freshly built
+ * `NextResponse.redirect()` drops them on the floor — the session never lands
+ * in the browser, the user is bounced back to the login screen, and only the
+ * *second* attempt works. That was the "ต้องกด Login 2 รอบ" bug.
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const nextOverride = searchParams.get("next");
 
+  // Google logins have no remember-me checkbox; treat them as remembered
+  // unless the user explicitly opted out on a previous password login.
+  const remember = request.cookies.get(REMEMBER_COOKIE)?.value !== "0";
+
+  const pendingCookies: CookieToSet[] = [];
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookieOptions: authCookieOptions(remember),
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet: CookieToSet[]) {
+          pendingCookies.push(...cookiesToSet);
+        },
+      },
+    },
+  );
+
+  /** Redirect that carries every cookie Supabase asked us to write. */
+  function redirectWithSession(to: string) {
+    const response = NextResponse.redirect(to);
+    for (const { name, value, options } of pendingCookies) {
+      response.cookies.set(name, value, options);
+    }
+    return response;
+  }
+
   // Helper: route every failure to /book/<invite> when the visitor came from
   // a member invite — never to /login (admin page).
-  const cookieStore = await cookies();
-  const lastInvite = cookieStore.get(LAST_INVITE_COOKIE)?.value ?? null;
+  const lastInvite = request.cookies.get(LAST_INVITE_COOKIE)?.value ?? null;
   const failRedirect = (errCode: string) =>
     lastInvite
       ? `${origin}/book/${encodeURIComponent(lastInvite)}?error=${errCode}`
@@ -46,22 +88,31 @@ export async function GET(request: NextRequest) {
   const reasonParam = (msg: string | null | undefined) =>
     msg ? `&reason=${encodeURIComponent(msg.slice(0, 160))}` : "";
 
+  /** A failed exchange must not leave half-written Supabase cookies behind —
+   *  they are exactly what poisons the *next* attempt. */
+  function failWith(errCode: string, reason: string | null | undefined) {
+    const response = NextResponse.redirect(
+      failRedirect(errCode) + reasonParam(reason),
+    );
+    for (const c of request.cookies.getAll()) {
+      if (isSupabaseAuthCookie(c.name)) {
+        response.cookies.set(c.name, "", { path: "/", maxAge: 0 });
+      }
+    }
+    return response;
+  }
+
   if (!code) {
     const provErr =
       searchParams.get("error_description") || searchParams.get("error");
     console.error("[auth/callback] no code in callback", provErr);
-    return NextResponse.redirect(
-      failRedirect("oauth_failed") + reasonParam(provErr ?? "no_code"),
-    );
+    return failWith("oauth_failed", provErr ?? "no_code");
   }
 
-  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error || !data.user) {
     console.error("[auth/callback] exchange failed", error?.message);
-    return NextResponse.redirect(
-      failRedirect("oauth_failed") + reasonParam(error?.message ?? "no_user"),
-    );
+    return failWith("oauth_failed", error?.message ?? "no_user");
   }
   const user = data.user;
 
@@ -69,11 +120,10 @@ export async function GET(request: NextRequest) {
   const ip = forwardedFor?.split(",")[0]?.trim();
   await recordLogin(user.id, ip);
 
-  const intentRaw = cookieStore.get(REGISTER_COOKIE)?.value;
+  const intentRaw = request.cookies.get(REGISTER_COOKIE)?.value;
 
   // ─── Flow 1: register-via-Google intent ──────────────────────────────
   if (intentRaw) {
-    cookieStore.set(REGISTER_COOKIE, "", { path: "/", maxAge: 0 });
     try {
       const intent = JSON.parse(
         decodeURIComponent(intentRaw),
@@ -112,11 +162,15 @@ export async function GET(request: NextRequest) {
               ? `&detail=${encodeURIComponent(res.error.slice(0, 200))}`
               : "";
           console.error("[auth/callback] registerMember failed", res.error);
-          return NextResponse.redirect(
+          const response = redirectWithSession(
             `${origin}/book/${intent.inviteCode}?error=${detail}${extra}`,
           );
+          response.cookies.set(REGISTER_COOKIE, "", { path: "/", maxAge: 0 });
+          return response;
         }
-        return NextResponse.redirect(`${origin}/app?welcome=1`);
+        const response = redirectWithSession(`${origin}/app?welcome=1`);
+        response.cookies.set(REGISTER_COOKIE, "", { path: "/", maxAge: 0 });
+        return response;
       }
     } catch {
       // Fall through to normal routing.
@@ -129,7 +183,7 @@ export async function GET(request: NextRequest) {
     nextOverride.startsWith("/") &&
     !nextOverride.startsWith("//")
   ) {
-    return NextResponse.redirect(`${origin}${nextOverride}`);
+    return redirectWithSession(`${origin}${nextOverride}`);
   }
 
   // ─── Flow 2/3: auto-route by role/membership ─────────────────────────
@@ -142,7 +196,7 @@ export async function GET(request: NextRequest) {
   const role = (profile as { role: string } | null)?.role ?? "viewer";
   const isStaffPlus = ["staff", "admin", "super_admin", "owner"].includes(role);
   if (isStaffPlus) {
-    return NextResponse.redirect(`${origin}/admin/dashboard`);
+    return redirectWithSession(`${origin}/admin/bookings`);
   }
 
   const { data: memberByProfile } = await admin
@@ -170,7 +224,7 @@ export async function GET(request: NextRequest) {
     }
   }
   if (hasMember) {
-    return NextResponse.redirect(`${origin}/app`);
+    return redirectWithSession(`${origin}/app`);
   }
 
   // ─── Unregistered ────────────────────────────────────────────────────
@@ -179,11 +233,11 @@ export async function GET(request: NextRequest) {
   // match and offer a one-click register-with-this-email.
   const emailParam = user.email ? `&email=${encodeURIComponent(user.email)}` : "";
   if (lastInvite) {
-    return NextResponse.redirect(
+    return redirectWithSession(
       `${origin}/book/${encodeURIComponent(lastInvite)}?error=not_registered${emailParam}`,
     );
   }
-  return NextResponse.redirect(
+  return redirectWithSession(
     `${origin}/member-login?error=not_registered${emailParam}`,
   );
 }

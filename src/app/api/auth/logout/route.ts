@@ -1,12 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createSupabaseServerClient } from "@/lib/integrations/supabase/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import type { Database } from "@/lib/types/database";
+import {
+  authCookieOptions,
+  isSupabaseAuthCookie,
+} from "@/lib/integrations/supabase/cookie-options";
 
 const LAST_INVITE_COOKIE = "easyspace.last_invite";
 
-export async function POST(request: NextRequest) {
-  const supabase = await createSupabaseServerClient();
-  await supabase.auth.signOut();
+type CookieToSet = { name: string; value: string; options: CookieOptions };
 
+export async function POST(request: NextRequest) {
   // Route back to the appropriate login screen based on where the user was.
   // Members must NEVER land on the admin-styled /member-login page — they go
   // back to their org's /book/<code> landing if we still know the invite code.
@@ -34,8 +38,43 @@ export async function POST(request: NextRequest) {
     // referer not parseable — fall back to admin login
   }
 
-  const url = new URL(dest, request.url);
-  const response = NextResponse.redirect(url, { status: 303 });
+  const response = NextResponse.redirect(new URL(dest, request.url), {
+    status: 303,
+  });
+
+  // The client must write its cookie deletions onto THIS response. Going
+  // through `cookies()` and then returning a freshly built redirect silently
+  // drops them, leaving a revoked `sb-*` token in the browser — which then
+  // poisons the next Google login and makes it fail on the first attempt.
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookieOptions: authCookieOptions(false),
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet: CookieToSet[]) {
+          for (const { name, value, options } of cookiesToSet) {
+            response.cookies.set(name, value, options);
+          }
+        },
+      },
+    },
+  );
+
+  await supabase.auth.signOut();
+
+  // Belt and braces: expire every Supabase cookie still on the request,
+  // including the chunked `.0`/`.1` parts and a stale PKCE verifier. signOut()
+  // only clears the ones it knows about in this runtime.
+  for (const c of request.cookies.getAll()) {
+    if (isSupabaseAuthCookie(c.name)) {
+      response.cookies.set(c.name, "", { path: "/", maxAge: 0 });
+    }
+  }
+
   // Clear the last_invite hint after a member logout so a future admin
   // logout on the same browser doesn't bounce to a member page.
   if (isMember) {

@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Eye, EyeOff, KeyRound, Loader2, Mail } from "lucide-react";
-import { createSupabaseBrowserClient } from "@/lib/integrations/supabase/client";
+import {
+  createSupabaseBrowserClient,
+  setRememberPreference,
+} from "@/lib/integrations/supabase/client";
 import { cn } from "@/lib/cn";
 
 export function LoginForm({ next }: { next?: string }) {
@@ -20,7 +23,13 @@ export function LoginForm({ next }: { next?: string }) {
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      const supabase = createSupabaseBrowserClient();
+      // Must run BEFORE signInWithPassword: the session cookie is created by
+      // that call, and it is the cookie's own max-age that decides whether the
+      // login survives a browser restart. Ticking the box after the fact did
+      // nothing — the old code only wrote a localStorage flag nobody read.
+      setRememberPreference(remember);
+
+      const supabase = createSupabaseBrowserClient({ remember });
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -33,14 +42,7 @@ export function LoginForm({ next }: { next?: string }) {
         );
         return;
       }
-      if (typeof window !== "undefined") {
-        if (remember) {
-          window.localStorage.setItem("easyspace.remember", "1");
-        } else {
-          window.localStorage.removeItem("easyspace.remember");
-        }
-      }
-      router.replace(next ?? "/admin/dashboard");
+      router.replace(next ?? "/admin/bookings");
       router.refresh();
     });
   }

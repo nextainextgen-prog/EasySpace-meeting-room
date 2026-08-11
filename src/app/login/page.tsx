@@ -39,7 +39,7 @@ export default async function LoginPage({
       const supabase = await createSupabaseServerClient();
       await supabase.auth.signOut();
     } else {
-      redirect(params.next ?? "/admin/dashboard");
+      redirect(params.next ?? "/admin/bookings");
     }
   }
   const errorMessage = params.error ? ERROR_MESSAGES[params.error] : null;
