@@ -778,7 +778,7 @@ export async function createPublicBooking(
   // Booked from inside LINE: tie the booking to them and send the card.
   let lineLinked = false;
   if (input.lineAccessToken) {
-    const linked = await linkLineToBooking(bookingId, input.lineAccessToken);
+    const linked = await linkLineToBooking(bookingId, input.lineAccessToken, cfg.liff_id);
     lineLinked = linked.ok;
   }
 

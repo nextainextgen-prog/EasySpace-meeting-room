@@ -162,6 +162,7 @@ async function main() {
   const wrong = "xxxxxx" + String((Number(digits.slice(-4)) + 1) % 10000).padStart(4, "0");
   ok("receiver match on our account", receiverMatches(slip({ account: masked }).data as never, setup.banks, null));
   ok("receiver mismatch on other account", !receiverMatches(slip({ account: wrong }).data as never, setup.banks, null));
+  ok("placeholder 000-0-00000-0 never offered to customers", setup.banks.length === 1 && !setup.banks.some((b) => b.account_number.startsWith("000")));
 
   await purge();
   __reset();

@@ -112,10 +112,11 @@ export async function sendBookingLine(
 export async function linkLineToBooking(
   bookingId: string,
   accessToken: string,
+  liffIdOverride?: string,
 ): Promise<{ ok: boolean; message?: string; pushed?: boolean }> {
-  const cfg = await getPublicRoomConfig();
-  if (!cfg.liff_id) return { ok: false, message: "ยังไม่ได้ตั้งค่า LIFF" };
-  const who = await resolveLiffUser(accessToken, cfg.liff_id);
+  const liffId = liffIdOverride ?? (await getPublicRoomConfig()).liff_id;
+  if (!liffId) return { ok: false, message: "ยังไม่ได้ตั้งค่า LIFF" };
+  const who = await resolveLiffUser(accessToken, liffId);
   if (!who.ok) return { ok: false, message: "ยืนยันตัวตน LINE ไม่สำเร็จ" };
 
   const admin = createSupabaseAdminClient();

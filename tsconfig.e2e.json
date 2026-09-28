@@ -20,6 +20,9 @@
       "@/lib/integrations/line-messaging": [
         "./scripts/e2e/stub-line.ts"
       ],
+      "@/lib/server/payment-banks": [
+        "./scripts/e2e/stub-payment-banks.ts"
+      ],
       "@/*": [
         "./src/*"
       ]

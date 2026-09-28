@@ -22,6 +22,9 @@ import { getPublicRoomConfig, type PublicRoomConfig } from "@/lib/data/public-ro
 import { dispatchEvent, createInAppNotification } from "@/lib/server/notifications";
 import { paymentRecordedTemplate, slipReviewTemplate } from "@/lib/templates/telegram";
 import { sendBookingLine } from "@/lib/server/booking-line";
+import { listPaymentBanks, type BankForPayment } from "@/lib/server/payment-banks";
+
+export type { BankForPayment };
 import {
   amountDueNow,
   maskedAccountMatches,
@@ -62,14 +65,6 @@ const NEEDS_REVIEW: SlipStatus[] = ["amount_mismatch", "receiver_mismatch", "too
 
 // ─── Setup ────────────────────────────────────────────────────────────────
 
-export interface BankForPayment {
-  id: string;
-  bank_name: string;
-  account_number: string;
-  account_name: string;
-  is_default: boolean;
-}
-
 export interface PaymentSetup {
   ready: boolean;
   /** Why online payment is off, for the admin screen. */
@@ -79,6 +74,12 @@ export interface PaymentSetup {
   holdMinutes: number;
   banks: BankForPayment[];
   promptpayId: string | null;
+}
+
+/** 10–15 digits and not a run of one repeated digit. */
+export function isRealAccountNumber(n: string): boolean {
+  const d = n.replace(/\D/g, "");
+  return d.length >= 10 && d.length <= 15 && !/^(\d)\1+$/.test(d);
 }
 
 async function slipTableExists(): Promise<boolean> {
@@ -91,17 +92,14 @@ export async function getPaymentSetup(cfgOverride?: PublicRoomConfig): Promise<P
   const admin = createSupabaseAdminClient();
   const [cfg, banksRes, methodsRes, keyOk, tableOk] = await Promise.all([
     cfgOverride ?? getPublicRoomConfig(),
-    admin
-      .from("bank_accounts")
-      .select("id, bank_name, account_number, account_name, is_default")
-      .eq("is_active", true)
-      .order("is_default", { ascending: false })
-      .order("display_order"),
+    listPaymentBanks(),
     admin.from("settings").select("value").eq("key", "finance.payment_methods").maybeSingle(),
     easySlipConfigured(),
     slipTableExists(),
   ]);
-  const banks = (banksRes.data ?? []) as BankForPayment[];
+  const allBanks = banksRes;
+  // Never ask a customer to transfer into a placeholder like 000-0-00000-0.
+  const banks = allBanks.filter((b) => isRealAccountNumber(b.account_number));
   const promptpayRaw = (methodsRes.data as { value?: { promptpay_id?: string } } | null)?.value?.promptpay_id ?? "";
   const promptpayId = promptPayPayload(promptpayRaw) ? promptpayRaw.replace(/\D/g, "") : null;
 
@@ -109,7 +107,13 @@ export async function getPaymentSetup(cfgOverride?: PublicRoomConfig): Promise<P
   if (!cfg.payment_enabled) missing.push("ปิดการชำระเงินออนไลน์ไว้");
   if (!tableOk) missing.push("ยังไม่ได้รัน migration 16");
   if (!keyOk) missing.push("ยังไม่ได้ใส่ EasySlip API key");
-  if (banks.length === 0 && !promptpayId) missing.push("ยังไม่มีบัญชีรับเงิน");
+  if (banks.length === 0 && !promptpayId) {
+    missing.push(
+      allBanks.length > 0
+        ? "บัญชีรับเงินยังเป็นเลขตัวอย่าง (เช่น 000-0-00000-0) — แก้เป็นบัญชีจริงที่การ์ดบัญชีธนาคาร"
+        : "ยังไม่มีบัญชีรับเงิน",
+    );
+  }
 
   return {
     ready: missing.length === 0,
