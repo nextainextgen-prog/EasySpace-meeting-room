@@ -15,6 +15,7 @@ import { downloadIcs } from "./ics";
 import { saveBooking } from "./my-bookings";
 import { PaymentPanel, type SlipOutcome } from "./payment-panel";
 import { LineLink } from "./line-link";
+import { SendSlipPopup, lineChatLink, slipMessage } from "./send-slip-popup";
 import {
   PAYMENT_STATUS_LABEL,
   type PaymentMode,
@@ -46,7 +47,7 @@ export function SuccessView({
 }: {
   success: BookingSuccess;
   room: { name: string; color: string; thumbnail_url: string | null };
-  config: { line_url: string; line_id: string; phone: string; confirm_message: string };
+  config: { line_url: string; line_id: string; line_oa_id?: string | null; phone: string; confirm_message: string };
   channel: PublicChannel;
   payment: PublicPaymentInfo;
   onDone: () => void;
@@ -54,6 +55,17 @@ export function SuccessView({
   const [copied, setCopied] = useState(false);
   const [paid, setPaid] = useState<SlipOutcome | null>(null);
   const awaitingPayment = success.amountDue > 0 && !paid;
+  // Admin-confirms mode: the customer sends the slip to the OA chat instead.
+  const manual = success.amountDue === 0;
+  const [slipOpen, setSlipOpen] = useState(manual);
+  const handoff = {
+    reference: success.reference,
+    roomName: room.name,
+    startsAt: success.startsAt,
+    endsAt: success.endsAt,
+    totalAmount: success.totalAmount,
+    holdExpiresAt: success.holdExpiresAt,
+  };
   const statusHref = `/rooms/booking/${success.reference}?t=${success.token}&src=${channel}`;
   const minutes = Math.round(
     (new Date(success.endsAt).getTime() - new Date(success.startsAt).getTime()) / 60_000,
@@ -90,7 +102,7 @@ export function SuccessView({
             ? "ชำระเงินและแนบสลิปภายในเวลาที่กำหนด ระบบจะยืนยันการจองให้ทันที"
             : paid
               ? `ได้รับชำระ ฿${formatBahtPlain(paid.amount)} แล้ว ห้องพร้อมสำหรับคุณตามเวลานัด`
-              : "เรากันห้องไว้ให้คุณแล้ว · ทีมงานจะติดต่อกลับเพื่อยืนยัน"}
+              : "เรากันห้องไว้ให้คุณแล้ว · โอนเงินและส่งสลิปให้แอดมินทาง LINE เพื่อยืนยันการจอง"}
         </p>
       </div>
 
@@ -195,12 +207,12 @@ export function SuccessView({
             ]
           : [
               { title: "ส่งคำขอจองแล้ว", sub: "ห้องถูกกันไว้ให้คุณเรียบร้อย", done: true },
-              { title: "ทีมงานยืนยันการจอง", sub: `${config.confirm_message}`, done: false },
               {
-                title: "ชำระเงินและเข้าใช้ห้อง",
-                sub: `กันห้องไว้ถึง ${bkkDateLabel(success.holdExpiresAt)} ${bkkTime(success.holdExpiresAt)} น. หากยังไม่ยืนยัน`,
+                title: "โอนเงินและส่งสลิปทาง LINE",
+                sub: `ส่งสลิปพร้อมรหัส ${success.reference} ภายใน ${bkkDateLabel(success.holdExpiresAt)} ${bkkTime(success.holdExpiresAt)} น.`,
                 done: false,
               },
+              { title: "แอดมินยืนยันการจอง", sub: "ได้รับการยืนยันในแชท LINE แล้วเข้าใช้ห้องได้เลย", done: false },
             ]
         ).map((s, i, arr) => (
           <li key={s.title} className="relative flex gap-3.5 pb-5 last:pb-0">
@@ -222,6 +234,21 @@ export function SuccessView({
           </li>
         ))}
       </ol>
+
+      {manual && (
+        <a
+          href={lineChatLink(config.line_oa_id ?? null, config.line_url, slipMessage(handoff))}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => {
+            e.preventDefault();
+            setSlipOpen(true);
+          }}
+          className="es-rise mt-7 inline-flex h-[52px] w-full items-center justify-center rounded-pill bg-[#06C755] text-[16px] font-semibold tracking-tight text-white hover:brightness-95"
+        >
+          ส่งสลิปยืนยันการจองทาง LINE
+        </a>
+      )}
 
       {/* Actions */}
       <div className="es-rise mt-7 grid grid-cols-2 gap-2.5">
@@ -263,6 +290,15 @@ export function SuccessView({
           {config.phone}
         </a>
       </p>
+
+      <SendSlipPopup
+        booking={handoff}
+        payment={payment}
+        lineOaId={config.line_oa_id ?? null}
+        lineUrl={config.line_url}
+        open={slipOpen}
+        onClose={() => setSlipOpen(false)}
+      />
 
       <button
         type="button"

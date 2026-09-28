@@ -21,6 +21,7 @@ import {
 } from "@/lib/public-booking/shared";
 import { LiveBadge, PublicFooter, PublicTopBar } from "./_components/chrome";
 import { MyBookingsStrip } from "./_components/my-bookings";
+import { getPublicLineContact } from "@/lib/server/booking-line";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ export default async function PublicRoomsIndex({
   const config = await getPublicRoomConfig();
   if (!config.enabled) return notFound();
 
-  const rooms = await listPublicRooms();
+  const [rooms, contact] = await Promise.all([listPublicRooms(), getPublicLineContact(config)]);
   const today = bkkToday();
   const busy = await listPublicBusy({
     roomIds: rooms.map((r) => r.id),
@@ -140,7 +141,7 @@ export default async function PublicRoomsIndex({
         </div>
       </section>
 
-      <PublicFooter lineUrl={config.line_url} lineId={config.line_id} phone={config.phone} />
+      <PublicFooter lineUrl={contact.line_url} lineId={contact.line_id} phone={config.phone} />
     </>
   );
 }

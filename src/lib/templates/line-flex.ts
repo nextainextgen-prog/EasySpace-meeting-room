@@ -29,6 +29,9 @@ export interface BookingFlexInput {
   /** Amount still to pay online right now (received + payment enabled). */
   dueNow?: number | null;
   dueBy?: string | null;
+  /** Admin-confirms mode: what to transfer before sending the slip in chat. */
+  manualDue?: number | null;
+  manualLabel?: string | null;
   paymentLabel?: string | null;
   statusUrl: string;
   note?: string | null;
@@ -99,8 +102,8 @@ export function bookingFlexMessage(b: BookingFlexInput): LineMessage {
             title: "ได้รับการจองแล้ว",
             sub: b.dueNow
               ? `กรุณาชำระ ${baht(b.dueNow)}${b.dueBy ? ` ภายใน ${bkkTime(b.dueBy)} น. (${bkkDateLabel(b.dueBy)})` : ""} เพื่อยืนยันการจอง`
-              : "ทีมงานจะติดต่อกลับเพื่อยืนยันการจอง",
-            pill: pill(b.dueNow ? "รอชำระเงิน" : "รอยืนยัน", "#B45309", "#FEF3C7"),
+              : `กรุณาโอน${b.manualDue ? ` ${baht(b.manualDue)}${b.manualLabel ? ` (${b.manualLabel})` : ""}` : "ตามยอดที่แจ้ง"} แล้วส่งสลิปตอบกลับในแชทนี้พร้อมรหัสการจอง แอดมินจะยืนยันให้`,
+            pill: pill(b.dueNow ? "รอชำระเงิน" : "รอส่งสลิป", "#334155", "#F1F5F9"),
           };
 
   const rows = [

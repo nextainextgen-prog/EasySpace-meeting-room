@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getPublicRoomConfig } from "@/lib/data/public-rooms";
 import { getPublicBookingView } from "@/lib/server/public-booking";
 import { getPublicPaymentInfo } from "@/lib/server/payment-slips";
+import { getPublicLineContact } from "@/lib/server/booking-line";
 import { parseChannel } from "@/lib/public-booking/shared";
 import { PublicFooter, PublicTopBar } from "../../_components/chrome";
 import { BookingStatus } from "./booking-status";
@@ -27,6 +28,7 @@ export default async function PublicBookingStatusPage({
     getPublicRoomConfig(),
     getPublicPaymentInfo(),
   ]);
+  const contact = await getPublicLineContact(config);
 
   return (
     <>
@@ -38,8 +40,9 @@ export default async function PublicBookingStatusPage({
           channel={channel}
           payment={payment}
           config={{
-            line_url: config.line_url,
-            line_id: config.line_id,
+            line_url: contact.line_url,
+            line_id: contact.line_id,
+            line_oa_id: contact.line_oa_id,
             phone: config.phone,
             confirm_message: config.confirm_message,
           }}
@@ -59,7 +62,7 @@ export default async function PublicBookingStatusPage({
           </Link>
         </div>
       )}
-      <PublicFooter lineUrl={config.line_url} lineId={config.line_id} phone={config.phone} />
+      <PublicFooter lineUrl={contact.line_url} lineId={contact.line_id} phone={config.phone} />
     </>
   );
 }

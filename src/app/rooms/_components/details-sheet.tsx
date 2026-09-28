@@ -360,7 +360,7 @@ export function DetailsSheet({
           <p className="mt-2.5 text-center text-[11.5px] text-ink-3">
             {dueNow > 0
               ? `ขั้นตอนถัดไป: โอน${paymentModeLabel(payment.mode, payment.depositPercent)} และแนบสลิป`
-              : "ยังไม่มีการเก็บเงิน · ข้อมูลใช้เพื่อยืนยันการจองเท่านั้น"}
+              : "ขั้นตอนถัดไป: โอนเงินและส่งสลิปให้แอดมินทาง LINE"}
           </p>
         </div>
       </form>

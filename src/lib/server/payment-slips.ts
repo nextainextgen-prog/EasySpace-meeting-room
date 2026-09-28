@@ -20,7 +20,7 @@ import {
 } from "@/lib/integrations/easyslip";
 import { getPublicRoomConfig, type PublicRoomConfig } from "@/lib/data/public-rooms";
 import { dispatchEvent, createInAppNotification } from "@/lib/server/notifications";
-import { paymentRecordedTemplate, slipReviewTemplate } from "@/lib/templates/telegram";
+import { slipPaymentTemplate, slipReviewTemplate } from "@/lib/templates/telegram";
 import { sendBookingLine } from "@/lib/server/booking-line";
 import { notifyOverrideFinal } from "@/lib/server/overrides";
 import { listPaymentBanks, type BankForPayment } from "@/lib/server/payment-banks";
@@ -347,6 +347,7 @@ export async function submitSlip(opts: {
       imagePath: up.error ? null : imagePath,
       actorName: "ระบบ (EasySlip)",
       note: `ตรวจสลิปอัตโนมัติ · ${described.sender_bank ?? ""} ${described.sender_name ?? ""}`.trim(),
+      slip: { senderName: described.sender_name, senderBank: described.sender_bank, slipAt: data.date },
     });
     return {
       ok: true,
@@ -397,12 +398,13 @@ export async function applyPayment(opts: {
   actorName: string;
   actorId?: string | null;
   note?: string;
+  slip?: { senderName?: string | null; senderBank?: string | null; slipAt?: string | null };
 }): Promise<{ paymentStatus: string }> {
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("bookings")
     .select(
-      "id, reference_code, total_amount, paid_amount, booking_status, room:rooms(name), customer:customers(display_name, company_name), metadata",
+      "id, reference_code, total_amount, paid_amount, booking_status, starts_at, ends_at, room:rooms(name), customer:customers(display_name, company_name, phone), metadata",
     )
     .eq("id", opts.bookingId)
     .single();
@@ -412,8 +414,10 @@ export async function applyPayment(opts: {
     total_amount: number;
     paid_amount: number;
     booking_status: string;
+    starts_at: string;
+    ends_at: string;
     room: { name: string } | null;
-    customer: { display_name: string; company_name: string | null } | null;
+    customer: { display_name: string; company_name: string | null; phone: string | null } | null;
     metadata: { public?: { company?: string | null } } | null;
   };
 
@@ -453,16 +457,22 @@ export async function applyPayment(opts: {
   await Promise.allSettled([
     dispatchEvent(
       paymentStatus === "paid" ? "payment.paid" : "payment.deposit",
-      paymentRecordedTemplate({
+      slipPaymentTemplate({
         reference: b.reference_code,
         customerName: who,
+        customerPhone: b.customer?.phone ?? null,
         roomName: b.room?.name ?? "-",
+        startsAt: b.starts_at,
+        endsAt: b.ends_at,
         amount: opts.amount,
-        method: opts.method === "promptpay" ? "พร้อมเพย์ (ตรวจสลิปแล้ว)" : "โอนธนาคาร (ตรวจสลิปแล้ว)",
         totalAmount: Number(b.total_amount),
         paidAmount: newPaid,
-        remainingAmount: Math.max(0, Number(b.total_amount) - newPaid),
-        recordedBy: opts.actorName,
+        channel: opts.method === "promptpay" ? "พร้อมเพย์" : "โอนเข้าบัญชี",
+        senderName: opts.slip?.senderName ?? null,
+        senderBank: opts.slip?.senderBank ?? null,
+        transRef: opts.transRef,
+        slipAt: opts.slip?.slipAt ?? null,
+        verifiedBy: opts.actorName,
       }),
     ),
     createInAppNotification({
@@ -551,7 +561,7 @@ export async function reviewSlip(opts: {
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("payment_slips" as never)
-    .select("id, booking_id, status, amount, expected_amount, trans_ref, image_path, raw")
+    .select("id, booking_id, status, amount, expected_amount, trans_ref, image_path, raw, sender_name, sender_bank, slip_date")
     .eq("id", opts.slipId)
     .maybeSingle();
   const slip = data as unknown as {
@@ -563,6 +573,9 @@ export async function reviewSlip(opts: {
     trans_ref: string | null;
     image_path: string | null;
     raw: EasySlipData | null;
+    sender_name: string | null;
+    sender_bank: string | null;
+    slip_date: string | null;
   } | null;
   if (!slip) return { ok: false, message: "ไม่พบสลิป" };
   if (slip.status === "verified" || slip.status === "approved") {
@@ -597,6 +610,7 @@ export async function reviewSlip(opts: {
         actorName: opts.actorName,
         actorId: opts.actorId,
         note: `อนุมัติสลิปด้วยตนเอง${opts.note ? ` · ${opts.note}` : ""}`,
+        slip: { senderName: slip.sender_name, senderBank: slip.sender_bank, slipAt: slip.slip_date },
       });
     }
   }

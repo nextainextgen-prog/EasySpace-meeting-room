@@ -54,6 +54,8 @@ export interface FlowConfig {
   max_duration_minutes: number;
   line_url: string;
   line_id: string;
+  /** Real OA basic ID when known — enables "open chat with message" links. */
+  line_oa_id: string | null;
   phone: string;
   confirm_message: string;
   show_capacity: boolean;
@@ -744,7 +746,7 @@ function SummaryCard({
       <p className="mt-3 text-center text-[11.5px] text-ink-3">
         {payment.ready
           ? `${paymentModeLabel(payment.mode, payment.depositPercent)} ออนไลน์ · ยืนยันการจองทันทีเมื่อสลิปผ่าน`
-          : "ยังไม่ต้องชำระเงิน · ทีมงานยืนยันก่อนทุกครั้ง"}
+          : "จองแล้วโอนและส่งสลิปให้แอดมินทาง LINE เพื่อยืนยัน"}
       </p>
     </section>
   );
@@ -882,7 +884,7 @@ function RoomDetails({
               ]
             : [
                 ["เลือกเวลาและกรอกข้อมูล", "ห้องจะถูกกันไว้ให้คุณทันทีหลังกดยืนยัน"],
-                ["ทีมงานโทรยืนยัน", "แจ้งรายละเอียดและช่องทางชำระเงิน"],
+                ["โอนและส่งสลิปทาง LINE", "แอดมินตรวจสลิปและยืนยันการจองในแชท"],
                 ["เข้าใช้ห้องได้เลย", "มาถึงก่อนเวลาเล็กน้อยเพื่อเตรียมตัว"],
               ]
           ).map(([title, sub], i) => (

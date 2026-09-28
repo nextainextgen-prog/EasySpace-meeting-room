@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Label, Select } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   saveSecret,
   savePromptPayId,
@@ -29,7 +29,7 @@ interface Props {
 
 const HOLD_OPTIONS = [15, 30, 60, 120, 240, 1440];
 
-export function OnlinePaymentCard({ config: initial, promptpayId: initialPp, easyslip, missing, ready }: Props) {
+export function OnlinePaymentCard({ config: initial, promptpayId: initialPp, easyslip, missing }: Props) {
   const [cfg, setCfg] = useState(initial);
   const [pp, setPp] = useState(initialPp);
   const [key, setKey] = useState("");
@@ -37,6 +37,7 @@ export function OnlinePaymentCard({ config: initial, promptpayId: initialPp, eas
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [quota, setQuota] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const router = useRouter();
 
   function flash(tone: "ok" | "err", text: string) {
     setMsg({ tone, text });
@@ -82,48 +83,73 @@ export function OnlinePaymentCard({ config: initial, promptpayId: initialPp, eas
   const example = 1200;
   const due = cfg.payment_mode === "full" ? example : Math.ceil((example * cfg.deposit_percent) / 100);
 
+  const blockers = missing.filter((m) => m !== "ปิดการชำระเงินออนไลน์ไว้");
+  const autoLive = cfg.payment_enabled && blockers.length === 0;
+
+  function toggle(next: boolean) {
+    setCfg((c) => ({ ...c, payment_enabled: next }));
+    start(async () => {
+      const r = await updatePublicConfig({ payment_enabled: next });
+      if (!r.ok) {
+        setCfg((c) => ({ ...c, payment_enabled: !next }));
+        return flash("err", r.error);
+      }
+      flash("ok", next ? "เปิดระบบชำระเงินออนไลน์แล้ว" : "ปิดระบบชำระเงินออนไลน์แล้ว — ใช้โหมดแอดมินยืนยัน");
+      router.refresh();
+    });
+  }
+
   return (
     <Card>
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <p className="font-semibold tracking-tight">ชำระเงินออนไลน์ (แนบสลิป · EasySlip)</p>
+      {/* Master switch */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="font-semibold tracking-tight">ระบบชำระเงินออนไลน์</p>
           <p className="mt-0.5 text-xs text-ink-3">
-            ลูกค้าจองจากหน้า /rooms แล้วโอนเงิน + แนบสลิป ระบบตรวจกับธนาคารและยืนยันการจองอัตโนมัติ
+            เปิด = ลูกค้าโอนและแนบสลิปในหน้าจอง ระบบตรวจกับ EasySlip และยืนยันการจองให้อัตโนมัติ ·
+            ปิด = แอดมินยืนยันเอง ลูกค้าจะเห็นหน้าต่างให้ส่งสลิปทาง LINE หลังจอง
           </p>
         </div>
-        <Badge tone={ready ? "success" : "warning"} className="!text-[10px]">
-          {ready ? "พร้อมใช้งาน" : "ยังไม่พร้อม"}
-        </Badge>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={cfg.payment_enabled}
+          aria-label="เปิด/ปิดระบบชำระเงินออนไลน์"
+          disabled={pending}
+          onClick={() => toggle(!cfg.payment_enabled)}
+          className={cn(
+            "relative h-7 w-12 shrink-0 rounded-pill transition disabled:opacity-60",
+            cfg.payment_enabled ? "bg-ink-1" : "bg-slate-300",
+          )}
+        >
+          <span
+            className={cn(
+              "absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all",
+              cfg.payment_enabled ? "left-[22px]" : "left-0.5",
+            )}
+          />
+        </button>
       </div>
 
-      {!ready && missing.length > 0 && (
-        <div className="mb-3 border-l-2 border-ink-1 pl-3 text-xs text-ink-1">
-          <p className="mb-1 font-semibold">ยังเปิดรับชำระออนไลน์ไม่ได้</p>
-          <ul className="list-inside list-disc space-y-0.5">
-            {missing.map((m) => (
-              <li key={m}>{m}</li>
-            ))}
-          </ul>
-          <p className="mt-1 text-ink-3">ระหว่างนี้ลูกค้ายังจองได้ตามปกติ (ทีมงานโทรยืนยัน)</p>
-        </div>
-      )}
+      <div className="mt-3 rounded-input border border-line bg-surface-subtle/60 px-3 py-2.5 text-xs">
+        <p className="text-ink-3">โหมดที่ลูกค้าเห็นตอนนี้</p>
+        <p className="mt-0.5 text-sm font-semibold tracking-tight text-ink-1">
+          {autoLive ? "ชำระออนไลน์ · ตรวจสลิปอัตโนมัติ" : "แอดมินยืนยัน · ลูกค้าส่งสลิปทาง LINE"}
+        </p>
+        {cfg.payment_enabled && blockers.length > 0 && (
+          <div className="mt-2 border-l-2 border-ink-1 pl-3 text-ink-1">
+            <p className="font-semibold">เปิดไว้แล้ว แต่ยังใช้ไม่ได้ เพราะ</p>
+            <ul className="mt-0.5 list-inside list-disc space-y-0.5">
+              {blockers.map((m) => (
+                <li key={m}>{m}</li>
+              ))}
+            </ul>
+            <p className="mt-1 text-ink-3">แก้ครบแล้วระบบจะสลับเป็นชำระออนไลน์ให้เอง</p>
+          </div>
+        )}
+      </div>
 
-      <div className="space-y-3">
-        <label className="flex items-start gap-2.5 rounded-input border border-line bg-white px-3 py-2.5 text-sm">
-          <input
-            type="checkbox"
-            checked={cfg.payment_enabled}
-            onChange={(e) => setCfg({ ...cfg, payment_enabled: e.target.checked })}
-            className="mt-0.5 h-4 w-4 accent-primary-600"
-          />
-          <span>
-            <span className="block font-medium tracking-tight">ให้ลูกค้าชำระเงินหลังจอง</span>
-            <span className="mt-0.5 block text-xs text-ink-3">
-              ปิด = ลูกค้าจองแล้วรอทีมงานโทรยืนยันแบบเดิม
-            </span>
-          </span>
-        </label>
-
+      <div className="mt-4 space-y-3">
         <div>
           <Label>รูปแบบการชำระ</Label>
           <div className="grid grid-cols-2 gap-2">

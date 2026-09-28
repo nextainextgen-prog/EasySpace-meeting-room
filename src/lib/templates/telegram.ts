@@ -940,12 +940,22 @@ export function publicBookingTemplate(opts: {
   expiresAt?: string | null;
   note?: string | null;
   displacedCount: number;
-  /** Transfer the customer was asked to make online; 0 = team confirms by phone. */
+  /** Transfer the customer was asked to make online; 0 = admin confirms via LINE. */
   amountDue?: number;
+  paymentMode?: "deposit" | "full" | null;
+  depositPercent?: number;
+  /** Admin-confirms mode: what the customer was told to transfer before sending the slip. */
+  manualDue?: number;
+  hourlyTotal?: number;
 }): string {
   const when = bkkWhen(opts.startsAt, opts.endsAt);
+  const online = Boolean(opts.amountDue && opts.amountDue > 0);
   const lines: string[] = [];
-  lines.push("🛎️ <b>จองออนไลน์ใหม่ — รอทีมงานยืนยัน</b>");
+  lines.push(
+    online
+      ? "🛎️ <b>จองออนไลน์ใหม่ — รอลูกค้าชำระเงิน</b>"
+      : "🛎️ <b>จองออนไลน์ใหม่ — รอลูกค้าส่งสลิปทาง LINE</b>",
+  );
   lines.push(SEP);
   lines.push(`🎫 <b>รหัสการจอง:</b> <code>${escapeHtml(opts.reference)}</code>`);
   lines.push(`🏢 <b>ผู้จอง:</b> ${escapeHtml(opts.customerName)}`);
@@ -957,29 +967,44 @@ export function publicBookingTemplate(opts: {
   lines.push(`📅 <b>วันที่:</b> ${when.date}`);
   lines.push(`⏰ <b>เวลา:</b> ${when.time}`);
   if (opts.attendees) lines.push(`👥 <b>ผู้เข้าร่วม:</b> ${opts.attendees} ท่าน`);
-  lines.push(
-    `💰 <b>ราคาประเมิน:</b> ${formatBaht(opts.totalAmount)}${opts.packageName ? ` (${escapeHtml(opts.packageName)})` : ""}`,
-  );
   lines.push(`📲 <b>ช่องทาง:</b> ${escapeHtml(opts.channelLabel)}`);
-  if (opts.note) {
-    lines.push("");
-    lines.push(`📝 <b>หมายเหตุลูกค้า:</b> ${escapeHtml(opts.note)}`);
-  }
+  if (opts.note) lines.push(`📝 <b>หมายเหตุลูกค้า:</b> ${escapeHtml(opts.note)}`);
+
+  // ── Money: what is due now, what is left for the day ──
+  const total = opts.totalAmount;
+  const nowDue = online ? opts.amountDue! : (opts.manualDue ?? 0);
+  const later = Math.max(0, total - nowDue);
+  const modeLabel =
+    opts.paymentMode === "full" ? "ชำระเต็มจำนวน" : `มัดจำ ${opts.depositPercent ?? 30}%`;
   lines.push(SEP);
-  if (opts.amountDue && opts.amountDue > 0) {
+  lines.push(
+    online
+      ? "💳 <b>การชำระเงิน</b> · ออนไลน์ ตรวจสลิปอัตโนมัติ (EasySlip)"
+      : "💳 <b>การชำระเงิน</b> · ลูกค้าส่งสลิปทาง LINE แอดมินยืนยัน",
+  );
+  lines.push(
+    `• ราคารวม: <b>${formatBaht(total)}</b>${opts.packageName ? ` (แพ็กเกจ ${escapeHtml(opts.packageName)})` : ""}`,
+  );
+  if (opts.packageName && opts.hourlyTotal && opts.hourlyTotal > total) {
+    lines.push(`   ราคาปกติ ${formatBaht(opts.hourlyTotal)} · ลูกค้าประหยัด ${formatBaht(opts.hourlyTotal - total)}`);
+  }
+  if (nowDue > 0) {
+    lines.push(`• ต้องชำระตอนนี้ (${modeLabel}): <b>${formatBaht(nowDue)}</b>`);
     lines.push(
-      `⏳ กันห้องแล้ว รอลูกค้าโอน <b>${formatBaht(opts.amountDue)}</b> และแนบสลิป — ระบบยืนยันให้อัตโนมัติเมื่อสลิปผ่าน`,
+      later > 0
+        ? `• คงเหลือชำระเพิ่มวันใช้ห้อง: <b>${formatBaht(later)}</b>`
+        : "• คงเหลือ: ไม่มี (ชำระครบในครั้งเดียว)",
     );
-    if (opts.expiresAt) {
-      lines.push(`⌛ <b>ต้องชำระภายใน:</b> ${bkkDateLabel(opts.expiresAt)} ${bkkTime(opts.expiresAt)} น.`);
-    }
-  } else {
-    lines.push("⚠️ กันห้องให้ลูกค้าแล้ว — โทรยืนยันและแจ้งช่องทางชำระเงิน");
-    if (opts.expiresAt) {
-      lines.push(
-        `⌛ <b>ยืนยันภายใน:</b> ${bkkDateLabel(opts.expiresAt)} ${bkkTime(opts.expiresAt)} น.`,
-      );
-    }
+  }
+  lines.push(
+    online
+      ? "• สถานะ: ⏳ กันห้องแล้ว รอลูกค้าโอนและแนบสลิป — ระบบยืนยันการจองให้เองเมื่อสลิปผ่าน"
+      : "• สถานะ: ⏳ กันห้องแล้ว รอสลิปในแชท LINE OA — ตรวจสลิปแล้วกดยืนยันการจองในปฏิทิน",
+  );
+  if (opts.expiresAt) {
+    lines.push(
+      `• ${online ? "ต้องชำระภายใน" : "กันห้องถึง"}: ${bkkDateLabel(opts.expiresAt)} ${bkkTime(opts.expiresAt)} น. — เลยเวลาแล้วระบบปล่อยห้องอัตโนมัติ`,
+    );
   }
   if (opts.displacedCount > 0) {
     lines.push(`🔁 ทับคิวภายใน ${opts.displacedCount} รายการ — ดูรายละเอียดในข้อความถัดไป`);
@@ -1093,5 +1118,57 @@ export function overrideConfirmedTemplate(opts: {
   }
   lines.push(SEP);
   lines.push(`👉 เลือกช่วงเวลาใหม่ให้ได้ทันที: ${escapeHtml(opts.adminUrl)}`);
+  return lines.join("\n");
+}
+
+/** Telegram template — money arrived through a verified (or admin-approved) slip. */
+export function slipPaymentTemplate(opts: {
+  reference: string;
+  customerName: string;
+  customerPhone?: string | null;
+  roomName: string;
+  startsAt: string;
+  endsAt: string;
+  amount: number;
+  totalAmount: number;
+  paidAmount: number;
+  channel: string;
+  senderName?: string | null;
+  senderBank?: string | null;
+  transRef?: string | null;
+  slipAt?: string | null;
+  verifiedBy: string;
+}): string {
+  const when = bkkWhen(opts.startsAt, opts.endsAt);
+  const remaining = Math.max(0, opts.totalAmount - opts.paidAmount);
+  const full = remaining <= 0.009;
+  const lines: string[] = [];
+  const how = /EasySlip/i.test(opts.verifiedBy) ? "ยืนยันการจองอัตโนมัติ" : "แอดมินอนุมัติ ยืนยันการจองแล้ว";
+  lines.push(full ? `✅ <b>ลูกค้าชำระครบแล้ว — ${how}</b>` : `✅ <b>ลูกค้าชำระมัดจำแล้ว — ${how}</b>`);
+  lines.push(SEP);
+  lines.push(`🎫 <b>รหัสการจอง:</b> <code>${escapeHtml(opts.reference)}</code>`);
+  lines.push(`🏢 <b>ผู้จอง:</b> ${escapeHtml(opts.customerName)}`);
+  if (opts.customerPhone) lines.push(`📞 <b>เบอร์โทร:</b> ${escapeHtml(opts.customerPhone)}`);
+  lines.push(`🏛️ <b>ห้อง:</b> ${escapeHtml(opts.roomName)} · ${when.date} ${when.time}`);
+  lines.push(SEP);
+  lines.push("💳 <b>การชำระเงิน</b>");
+  lines.push(`• รับครั้งนี้: <b>${formatBaht(opts.amount)}</b> (${escapeHtml(opts.channel)})`);
+  lines.push(`• ชำระแล้วรวม: ${formatBaht(opts.paidAmount)} / ${formatBaht(opts.totalAmount)}`);
+  lines.push(
+    full
+      ? "• คงเหลือ: ไม่มี — ชำระครบแล้ว"
+      : `• คงเหลือชำระเพิ่มวันใช้ห้อง: <b>${formatBaht(remaining)}</b> — เก็บเงินส่วนนี้หน้างาน`,
+  );
+  if (opts.senderName || opts.senderBank || opts.transRef) {
+    lines.push(SEP);
+    lines.push("🧾 <b>สลิป</b>");
+    if (opts.senderName || opts.senderBank) {
+      lines.push(`• ผู้โอน: ${escapeHtml([opts.senderName, opts.senderBank].filter(Boolean).join(" · "))}`);
+    }
+    if (opts.slipAt) lines.push(`• เวลาโอน: ${bkkDateLabel(opts.slipAt)} ${bkkTime(opts.slipAt)} น.`);
+    if (opts.transRef) lines.push(`• เลขอ้างอิง: <code>${escapeHtml(opts.transRef)}</code>`);
+  }
+  lines.push(SEP);
+  lines.push(`👨‍💼 <b>ตรวจโดย:</b> ${escapeHtml(opts.verifiedBy)}`);
   return lines.join("\n");
 }

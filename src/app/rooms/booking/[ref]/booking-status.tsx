@@ -19,13 +19,14 @@ import { downloadIcs } from "../../_components/ics";
 import { forgetBooking } from "../../_components/my-bookings";
 import { PaymentPanel } from "../../_components/payment-panel";
 import { LineLink } from "../../_components/line-link";
+import { SendSlipCard } from "../../_components/send-slip-popup";
 import type { PublicPaymentInfo } from "@/lib/public-booking/payment";
 
 const STATUS: Record<
   string,
   { label: string; tone: "pending" | "emerald" | "blue" | "slate" | "rose"; sub: string }
 > = {
-  pending: { label: "รอยืนยัน", tone: "pending", sub: "ห้องถูกกันไว้ให้คุณแล้ว ทีมงานจะติดต่อกลับเพื่อยืนยัน" },
+  pending: { label: "รอยืนยัน", tone: "pending", sub: "ห้องถูกกันไว้ให้คุณแล้ว โอนเงินและส่งสลิปให้แอดมินทาง LINE เพื่อยืนยันการจอง" },
   confirmed: { label: "ยืนยันแล้ว", tone: "emerald", sub: "การจองของคุณได้รับการยืนยันเรียบร้อย พบกันตามเวลานัด" },
   in_use: { label: "กำลังใช้งาน", tone: "blue", sub: "ขอให้การประชุมเป็นไปอย่างราบรื่น" },
   completed: { label: "เสร็จสิ้น", tone: "slate", sub: "ขอบคุณที่ใช้บริการ EasySpace" },
@@ -52,7 +53,7 @@ export function BookingStatus({
   token: string;
   channel: PublicChannel;
   payment: PublicPaymentInfo;
-  config: { line_url: string; line_id: string; phone: string; confirm_message: string };
+  config: { line_url: string; line_id: string; line_oa_id?: string | null; phone: string; confirm_message: string };
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -159,6 +160,24 @@ export function BookingStatus({
             mode={view.paymentMode}
             payment={payment}
             onPaid={() => router.refresh()}
+          />
+        </div>
+      )}
+
+      {view.status === "pending" && view.dueNow === 0 && !view.paymentMode && view.paidAmount === 0 && (
+        <div className="mt-6">
+          <SendSlipCard
+            booking={{
+              reference: view.reference,
+              roomName: view.roomName,
+              startsAt: view.startsAt,
+              endsAt: view.endsAt,
+              totalAmount: view.totalAmount,
+              holdExpiresAt: view.holdExpiresAt,
+            }}
+            payment={payment}
+            lineOaId={config.line_oa_id ?? null}
+            lineUrl={config.line_url}
           />
         </div>
       )}

@@ -784,6 +784,10 @@ export async function createPublicBooking(
     holdExpiresAt,
     displaced,
     amountDue,
+    paymentMode: cfg.payment_mode,
+    depositPercent: cfg.deposit_percent,
+    manualDue: amountDue > 0 ? 0 : amountDueNow(quote.total, cfg.payment_mode, cfg.deposit_percent),
+    hourlyTotal: quote.hourlyTotal,
   });
 
   // Booked from inside LINE: tie the booking to them and send the card.
@@ -860,6 +864,10 @@ async function notifyPublicBooking(opts: {
   holdExpiresAt: string;
   displaced: DisplacedRecord[];
   amountDue: number;
+  paymentMode: "deposit" | "full";
+  depositPercent: number;
+  manualDue: number;
+  hourlyTotal: number;
 }) {
   const { input, displaced } = opts;
   const phone = formatPhone(input.phone);
@@ -886,6 +894,10 @@ async function notifyPublicBooking(opts: {
       note: input.note,
       displacedCount: displaced.length,
       amountDue: opts.amountDue,
+      paymentMode: opts.paymentMode,
+      depositPercent: opts.depositPercent,
+      manualDue: opts.manualDue,
+      hourlyTotal: opts.hourlyTotal,
     }),
   );
 

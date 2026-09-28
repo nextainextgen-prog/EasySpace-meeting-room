@@ -9,6 +9,7 @@ import {
 } from "@/lib/data/public-rooms";
 import { parseChannel } from "@/lib/public-booking/shared";
 import { getPublicPaymentInfo } from "@/lib/server/payment-slips";
+import { getPublicLineContact } from "@/lib/server/booking-line";
 import { LiveBadge, PublicFooter, PublicTopBar } from "../_components/chrome";
 import { MyBookingsStrip } from "../_components/my-bookings";
 import { BookingFlow } from "../_components/booking-flow";
@@ -35,7 +36,7 @@ export default async function PublicRoomPage({ params, searchParams }: PageProps
   const channel = parseChannel(src);
 
   const others = (await listPublicRooms()).filter((r) => r.id !== room.id);
-  const [busyMap, packages, payment] = await Promise.all([
+  const [busyMap, packages, payment, contact] = await Promise.all([
     listPublicBusy({
       roomIds: [room.id, ...others.map((r) => r.id)],
       fromDate: bkkToday(),
@@ -45,6 +46,7 @@ export default async function PublicRoomPage({ params, searchParams }: PageProps
     }),
     listPublicPackages([room.id]),
     getPublicPaymentInfo(),
+    getPublicLineContact(config),
   ]);
 
   return (
@@ -73,8 +75,9 @@ export default async function PublicRoomPage({ params, searchParams }: PageProps
           booking_days_ahead: config.booking_days_ahead,
           min_duration_minutes: config.min_duration_minutes,
           max_duration_minutes: config.max_duration_minutes,
-          line_url: config.line_url,
-          line_id: config.line_id,
+          line_url: contact.line_url,
+          line_id: contact.line_id,
+          line_oa_id: contact.line_oa_id,
           phone: config.phone,
           confirm_message: config.confirm_message,
           show_capacity: config.show_capacity,
@@ -98,7 +101,7 @@ export default async function PublicRoomPage({ params, searchParams }: PageProps
         serverNow={new Date().toISOString()}
         payment={payment}
       />
-      <PublicFooter lineUrl={config.line_url} lineId={config.line_id} phone={config.phone} />
+      <PublicFooter lineUrl={contact.line_url} lineId={contact.line_id} phone={config.phone} />
       {/* Room for the mobile sticky CTA so it never covers the footer. */}
       {config.booking_enabled && <div className="h-24 lg:hidden" />}
     </>

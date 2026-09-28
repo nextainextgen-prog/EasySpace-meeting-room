@@ -10,7 +10,7 @@ import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { linePush, resolveLiffUser } from "@/lib/integrations/line-messaging";
 import { bookingFlexMessage, type BookingFlexKind } from "@/lib/templates/line-flex";
 import { bookingStatusUrl, getPublicRoomConfig } from "@/lib/data/public-rooms";
-import { PAYMENT_STATUS_LABEL } from "@/lib/public-booking/payment";
+import { PAYMENT_STATUS_LABEL, amountDueNow, paymentModeLabel } from "@/lib/public-booking/payment";
 
 export interface PublicLineLink {
   userId: string;
@@ -89,6 +89,8 @@ export async function sendBookingLine(
       totalAmount: total,
       paidAmount: paid,
       dueNow: k === "received" && due > 0 ? due : null,
+      manualDue: k === "received" && due === 0 ? amountDueNow(total - paid, cfg.payment_mode, cfg.deposit_percent) : null,
+      manualLabel: paymentModeLabel(cfg.payment_mode, cfg.deposit_percent),
       dueBy: k === "received" ? b.hold_expires_at : null,
       paymentLabel: PAYMENT_STATUS_LABEL[b.payment_status] ?? null,
       statusUrl:
@@ -132,4 +134,34 @@ export async function linkLineToBooking(
   if (already) return { ok: true, pushed: false };
   const sent = await sendBookingLine(bookingId);
   return { ok: true, pushed: sent.ok, message: sent.ok ? undefined : sent.message };
+}
+
+// ─── OA contact ───────────────────────────────────────────────────────────
+
+let oaCache: { basicId: string | null; at: number } | null = null;
+
+/**
+ * The OA's real basic ID (e.g. "@784aazqk"), read from the Messaging API so
+ * chat links can't drift from the account the token belongs to. Falls back
+ * to the configured `line_id` when no token is set.
+ */
+export async function getLineOaBasicId(): Promise<string | null> {
+  if (oaCache && Date.now() - oaCache.at < 10 * 60_000) return oaCache.basicId;
+  const { lineBotInfo } = await import("@/lib/integrations/line-messaging");
+  const info = await lineBotInfo();
+  const basicId = info.ok ? info.basicId : null;
+  oaCache = { basicId, at: Date.now() };
+  if (basicId) return basicId;
+  const cfg = await getPublicRoomConfig();
+  return /^@[a-z0-9._-]{3,}$/i.test(cfg.line_id) ? cfg.line_id : null;
+}
+
+/** Contact details for the public pages, with a chat link that actually opens the OA. */
+export async function getPublicLineContact(cfg: { line_url: string; line_id: string }) {
+  const basicId = await getLineOaBasicId();
+  return {
+    line_id: basicId ?? cfg.line_id,
+    line_url: basicId ? `https://line.me/R/ti/p/${encodeURIComponent(basicId)}` : cfg.line_url,
+    line_oa_id: basicId,
+  };
 }
