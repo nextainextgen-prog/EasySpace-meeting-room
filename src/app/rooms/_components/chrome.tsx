@@ -34,10 +34,8 @@ export function PublicTopBar({
           href={`/rooms?src=${channel}`}
           className="flex items-center gap-2.5 rounded-pill pr-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600/40"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icon.svg" alt="" className="h-8 w-8 rounded-[10px]" />
           <span className="leading-none">
-            <span className="block text-[15px] font-bold tracking-tighter text-ink-1">
+            <span className="block text-[17px] font-bold tracking-tighter text-ink-1">
               EasySpace
             </span>
             <span className="mt-0.5 block text-[10.5px] font-medium tracking-tight text-ink-3">
@@ -76,11 +74,7 @@ export function PublicFooter({
     <footer className="mt-14 border-t border-slate-900/[0.06] bg-white">
       <div className="mx-auto grid max-w-6xl gap-6 px-4 py-10 sm:grid-cols-[1.4fr_1fr_1fr] sm:px-6">
         <div>
-          <div className="flex items-center gap-2.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icon.svg" alt="" className="h-7 w-7 rounded-[9px]" />
-            <span className="text-[15px] font-bold tracking-tighter">EasySpace</span>
-          </div>
+          <p className="text-[17px] font-bold tracking-tighter">EasySpace</p>
           <p className="mt-3 max-w-xs text-[13px] leading-relaxed text-ink-2">
             ห้องประชุมพร้อมใช้งาน จองออนไลน์ได้ทันที ทีมงานยืนยันและดูแลทุกการจอง
           </p>
