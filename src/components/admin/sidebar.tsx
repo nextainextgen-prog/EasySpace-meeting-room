@@ -27,6 +27,7 @@ const sections: NavSection[] = [
       { href: "/admin/dashboard", label: "Dashboard", icon: "dashboard" },
       { href: "/admin/calendar", label: "ปฏิทินการจอง", icon: "calendar" },
       { href: "/admin/bookings", label: "ลงข้อมูลการจอง", icon: "bookings" },
+      { href: "/admin/overrides", label: "คิวทับซ้อน", icon: "overrides" },
     ],
   },
   {
@@ -128,7 +129,14 @@ interface SidebarProfile {
   avatarUrl: string | null;
 }
 
-export function AdminSidebar({ profile }: { profile: SidebarProfile }) {
+export function AdminSidebar({
+  profile,
+  badges = {},
+}: {
+  profile: SidebarProfile;
+  /** Counts shown beside nav items, keyed by href. */
+  badges?: Record<string, number>;
+}) {
   const pathname = usePathname();
   const userRank = ROLE_RANK[profile.role];
 
@@ -188,6 +196,11 @@ export function AdminSidebar({ profile }: { profile: SidebarProfile }) {
                       )}
                       <Icon size={18} strokeWidth={1.75} />
                       <span className="tracking-tight">{item.label}</span>
+                      {badges[item.href] ? (
+                        <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-pill bg-ink-1 px-1.5 text-[11px] font-semibold text-white tabular-nums">
+                          {badges[item.href]}
+                        </span>
+                      ) : null}
                     </Link>
                   );
                 })}

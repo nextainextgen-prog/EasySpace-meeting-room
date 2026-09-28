@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { Check, Copy } from "@phosphor-icons/react";
 import { Spinner } from "./spinner";
+import { BankLogo, bankDisplayName } from "@/components/bank-logo";
 import { cn } from "@/lib/cn";
 import { bkkTime } from "@/lib/time/bkk";
 import {
@@ -209,6 +210,9 @@ export function PaymentPanel({
 
           {tab === "promptpay" && hasPromptPay ? (
             <div className="text-center">
+              <div className="mb-3 flex items-center justify-center gap-2 text-[13px] font-semibold text-ink-1">
+                <BankLogo bank="PromptPay" size={28} /> พร้อมเพย์
+              </div>
               <div className="mx-auto w-[220px] rounded-[20px] border border-slate-900/[0.08] bg-white p-3">
                 {qr ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -235,10 +239,12 @@ export function PaymentPanel({
           ) : (
             <ul className="space-y-2">
               {payment.banks.map((b) => (
-                <li key={b.id} className="rounded-[18px] border border-slate-900/[0.08] p-4">
-                  <p className="text-[12px] font-medium text-ink-3">{b.bank_name}</p>
+                <li key={b.id} className="flex gap-3.5 rounded-[18px] border border-slate-900/[0.08] p-4">
+                  <BankLogo bank={b.bank_name} size={44} className="mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-medium text-ink-3">{bankDisplayName(b.bank_name)}</p>
                   <div className="mt-0.5 flex items-center justify-between gap-2">
-                    <p className="font-mono text-[19px] font-bold tracking-tight tabular-nums">{b.account_number}</p>
+                    <p className="whitespace-nowrap font-mono text-[17px] font-bold tracking-tight tabular-nums">{b.account_number}</p>
                     <button
                       type="button"
                       onClick={() => copy(b.account_number, b.id)}
@@ -249,6 +255,7 @@ export function PaymentPanel({
                     </button>
                   </div>
                   <p className="mt-0.5 text-[13px] text-ink-2">{b.account_name}</p>
+                  </div>
                 </li>
               ))}
             </ul>

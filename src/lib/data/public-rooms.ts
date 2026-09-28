@@ -28,6 +28,11 @@ export interface PublicRoomConfig {
   allow_override_internal: boolean;
   /** Try another free room for the displaced internal meeting first. */
   auto_relocate_internal: boolean;
+  /**
+   * Internal meetings already running, or starting within this many minutes,
+   * cannot be taken — people may already be in the room. 0 = no protection.
+   */
+  override_protect_minutes: number;
   /** How far ahead the calendar opens. */
   booking_days_ahead: number;
   min_duration_minutes: number;
@@ -65,6 +70,7 @@ export const DEFAULT_PUBLIC_ROOM_CONFIG: PublicRoomConfig = {
   booking_enabled: true,
   allow_override_internal: true,
   auto_relocate_internal: true,
+  override_protect_minutes: 0,
   booking_days_ahead: 30,
   min_duration_minutes: 60,
   max_duration_minutes: 8 * 60,
@@ -227,6 +233,8 @@ export async function listPublicBusy(opts: {
   fromDate: string;
   days: number;
   includeInternal: boolean;
+  /** Also show internal bookings starting before now + this many minutes. */
+  protectMinutes?: number;
 }): Promise<Map<string, PublicBusyBlock[]>> {
   const out = new Map<string, PublicBusyBlock[]>();
   for (const id of opts.roomIds) out.set(id, []);
@@ -244,7 +252,7 @@ export async function listPublicBusy(opts: {
     .lt("starts_at", to)
     .gt("ends_at", from)
     .order("starts_at");
-  if (!opts.includeInternal) query = query.eq("source", "external");
+  const protectUntil = Date.now() + Math.max(0, opts.protectMinutes ?? 0) * 60_000;
 
   const { data } = await query;
   const now = Date.now();
@@ -258,6 +266,15 @@ export async function listPublicBusy(opts: {
     // A hold past its deadline is already free — the daily cron just hasn't
     // swept it yet. Booking it releases it (see expireLapsedHolds).
     if (b.booking_status === "pending" && b.hold_expires_at && new Date(b.hold_expires_at).getTime() <= now) {
+      continue;
+    }
+    // Internal meetings stay invisible unless override is off, or they are
+    // running / about to start inside the protection window.
+    if (
+      (b as { source?: string }).source === "internal" &&
+      !opts.includeInternal &&
+      !(opts.protectMinutes && new Date(b.starts_at).getTime() < protectUntil)
+    ) {
       continue;
     }
     out.get(b.room_id)?.push({ startsAt: b.starts_at, endsAt: b.ends_at });

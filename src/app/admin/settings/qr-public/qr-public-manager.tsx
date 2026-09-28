@@ -296,8 +296,28 @@ export function QrPublicManager({
             disabled={!form.allow_override_internal}
             onChange={(v) => setForm({ ...form, auto_relocate_internal: v })}
             title="ย้ายคิวภายในไปห้องอื่นที่ว่างเวลาเดิมอัตโนมัติ"
-            sub="ถ้าไม่มีห้องว่าง คิวภายในจะถูกปล่อย และคืนให้อัตโนมัติหากลูกค้ายกเลิก/ไม่ยืนยัน"
+            sub="ถ้าไม่มีห้องว่าง คิวภายในจะถูกปล่อย และคืนให้อัตโนมัติหากลูกค้ายกเลิก/ไม่ชำระ · ดูและจัดการทุกเคสที่เมนู คิวทับซ้อน"
           />
+
+          <div>
+            <Label>ป้องกันคิวภายในที่กำลังใช้ / ใกล้เริ่ม</Label>
+            <Select
+              value={String(form.override_protect_minutes ?? 0)}
+              disabled={!form.allow_override_internal}
+              onChange={(e) =>
+                setForm({ ...form, override_protect_minutes: Number(e.target.value) })
+              }
+            >
+              <option value="0">ไม่ป้องกัน — ลูกค้าจองทับได้ทุกเวลา</option>
+              <option value="60">ห้ามทับคิวที่กำลังใช้ หรือจะเริ่มภายใน 1 ชม.</option>
+              <option value="120">ห้ามทับคิวที่กำลังใช้ หรือจะเริ่มภายใน 2 ชม.</option>
+              <option value="240">ห้ามทับคิวที่กำลังใช้ หรือจะเริ่มภายใน 4 ชม.</option>
+              <option value="1440">ห้ามทับคิวที่กำลังใช้ หรือจะเริ่มภายใน 24 ชม.</option>
+            </Select>
+            <p className="mt-1 text-xs text-ink-3">
+              คิวที่อยู่ในช่วงป้องกันจะแสดงเป็น &quot;ไม่ว่าง&quot; ต่อลูกค้า (ไม่มีชื่อ) — กันไม่ให้ต้องเชิญคนออกจากห้องกลางประชุม
+            </p>
+          </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>

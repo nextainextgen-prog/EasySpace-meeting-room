@@ -919,6 +919,8 @@ export interface DisplacedSummary {
   title?: string | null;
   action: "relocated" | "released";
   toRoomName?: string | null;
+  phone?: string | null;
+  attendees?: number | null;
 }
 
 /** Telegram template — an external customer booked from the public page. */
@@ -989,23 +991,29 @@ export function publicBookingTemplate(opts: {
 export function queueOverrideTemplate(opts: {
   reference: string;
   customerName: string;
+  customerPhone?: string | null;
   roomName: string;
   startsAt: string;
   endsAt: string;
   displaced: DisplacedSummary[];
+  /** "ยังไม่ชำระ · คืนคิวอัตโนมัติถ้าไม่ชำระภายใน …" etc. */
+  paymentNote?: string | null;
+  adminUrl?: string | null;
 }): string {
   const when = bkkWhen(opts.startsAt, opts.endsAt);
   const lines: string[] = [];
   lines.push("🔁 <b>ลูกค้าภายนอกขอทับคิวภายใน</b>");
   lines.push(SEP);
   lines.push(`🎫 <b>การจองลูกค้า:</b> <code>${escapeHtml(opts.reference)}</code> · ${escapeHtml(opts.customerName)}`);
+  if (opts.customerPhone) lines.push(`📞 <b>ลูกค้า:</b> ${escapeHtml(opts.customerPhone)}`);
   lines.push(`🏛️ <b>ห้อง:</b> ${escapeHtml(opts.roomName)}`);
   lines.push(`📅 <b>ช่วงเวลา:</b> ${when.date} ${when.time}`);
   lines.push(SEP);
   lines.push("<b>คิวภายในที่ได้รับผลกระทบ</b>");
   for (const d of opts.displaced) {
     const title = d.title ? ` — ${escapeHtml(d.title)}` : "";
-    lines.push(`• <code>${escapeHtml(d.reference)}</code> ${escapeHtml(d.who)}${title}`);
+    lines.push(`• <code>${escapeHtml(d.reference)}</code> ${escapeHtml(d.who)}${title}${d.attendees ? ` (${d.attendees} ท่าน)` : ""}`);
+    if (d.phone) lines.push(`   📞 ${escapeHtml(d.phone)}`);
     lines.push(
       d.action === "relocated"
         ? `   ✅ ย้ายไปห้อง <b>${escapeHtml(d.toRoomName ?? "-")}</b> เวลาเดิมอัตโนมัติ`
@@ -1013,7 +1021,9 @@ export function queueOverrideTemplate(opts: {
     );
   }
   lines.push(SEP);
-  lines.push("แจ้งสมาชิกในระบบแล้ว · ถ้าลูกค้ายกเลิกหรือไม่ยืนยัน ระบบจะคืนคิวที่ถูกปล่อยให้อัตโนมัติ (ถ้าห้องยังว่าง)");
+  if (opts.paymentNote) lines.push(`💳 ${escapeHtml(opts.paymentNote)}`);
+  lines.push("แจ้งสมาชิกในระบบแล้ว · ถ้าลูกค้ายกเลิกหรือไม่ชำระ ระบบคืนคิวที่ถูกปล่อยให้อัตโนมัติ (ถ้าห้องยังว่าง)");
+  if (opts.adminUrl) lines.push(`👉 จัดการเคสนี้: ${escapeHtml(opts.adminUrl)}`);
   return lines.join("\n");
 }
 
@@ -1062,5 +1072,26 @@ export function slipReviewTemplate(opts: {
   if (opts.receiverName) lines.push(`🏦 <b>ผู้รับ:</b> ${escapeHtml(opts.receiverName)}`);
   lines.push(SEP);
   lines.push("ตรวจและกดอนุมัติ/ปฏิเสธได้ที่หน้า ตรวจสลิป ในหลังบ้าน");
+  return lines.join("\n");
+}
+
+/** Telegram template — the customer paid, so the override is now permanent. */
+export function overrideConfirmedTemplate(opts: {
+  reference: string;
+  customerName: string;
+  open: Array<{ reference: string; who: string; action: "relocated" | "released" }>;
+  adminUrl: string;
+}): string {
+  const lines: string[] = [];
+  lines.push("📣 <b>ลูกค้าชำระแล้ว — การทับคิวเป็นการถาวร</b>");
+  lines.push(SEP);
+  lines.push(`🎫 <code>${escapeHtml(opts.reference)}</code> · ${escapeHtml(opts.customerName)}`);
+  for (const o of opts.open) {
+    lines.push(
+      `• <code>${escapeHtml(o.reference)}</code> ${escapeHtml(o.who)} — ${o.action === "released" ? "ยังไม่มีห้อง ต้องหาเวลาใหม่" : "ย้ายห้องแล้ว ตรวจสอบกับสมาชิก"}`,
+    );
+  }
+  lines.push(SEP);
+  lines.push(`👉 เลือกช่วงเวลาใหม่ให้ได้ทันที: ${escapeHtml(opts.adminUrl)}`);
   return lines.join("\n");
 }

@@ -22,6 +22,7 @@ import { getPublicRoomConfig, type PublicRoomConfig } from "@/lib/data/public-ro
 import { dispatchEvent, createInAppNotification } from "@/lib/server/notifications";
 import { paymentRecordedTemplate, slipReviewTemplate } from "@/lib/templates/telegram";
 import { sendBookingLine } from "@/lib/server/booking-line";
+import { notifyOverrideFinal } from "@/lib/server/overrides";
 import { listPaymentBanks, type BankForPayment } from "@/lib/server/payment-banks";
 
 export type { BankForPayment };
@@ -473,6 +474,7 @@ export async function applyPayment(opts: {
       relatedId: b.id,
     }),
     sendBookingLine(b.id, "confirmed"),
+    notifyOverrideFinal(b.id),
   ]);
 
   return { paymentStatus };

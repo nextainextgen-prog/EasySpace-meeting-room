@@ -122,6 +122,7 @@ export async function refreshPublicBusy(roomId: string): Promise<PublicBusyBlock
     fromDate: bkkToday(),
     days: cfg.booking_days_ahead + 1,
     includeInternal: !cfg.allow_override_internal,
+    protectMinutes: cfg.override_protect_minutes,
   });
   return map.get(roomId) ?? [];
 }

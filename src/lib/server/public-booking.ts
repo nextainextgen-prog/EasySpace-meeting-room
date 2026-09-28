@@ -30,6 +30,7 @@ import { generateBookingCode } from "@/lib/data/bookings";
 import {
   getPublicRoomConfig,
   listPublicPackages,
+  publicBaseUrl,
   type PublicRoomConfig,
 } from "@/lib/data/public-rooms";
 import { dispatchEvent, createInAppNotification } from "@/lib/server/notifications";
@@ -76,6 +77,8 @@ export interface DisplacedRecord {
   originalStatus: string;
   memberId: string | null;
   memberName: string | null;
+  memberPhone?: string | null;
+  attendees?: number | null;
   profileId: string | null;
   orgName: string | null;
   title: string | null;
@@ -108,13 +111,13 @@ interface OverlapRow {
   internal_title: string | null;
   member_id: string | null;
   metadata: Record<string, unknown> | null;
-  member: { full_name: string; profile_id: string | null } | null;
+  member: { full_name: string; profile_id: string | null; phone?: string | null } | null;
   org: { name: string; short_name: string | null } | null;
 }
 
 const OVERLAP_SELECT = `id, reference_code, room_id, starts_at, ends_at, source, booking_status,
   attendees_count, internal_title, member_id, metadata,
-  member:members(full_name, profile_id), org:organizations(name, short_name)`;
+  member:members(full_name, profile_id, phone), org:organizations(name, short_name)`;
 
 async function findOverlaps(
   roomId: string,
@@ -188,6 +191,8 @@ async function displaceInternal(
       originalStatus: row.booking_status,
       memberId: row.member_id,
       memberName: row.member?.full_name ?? null,
+      memberPhone: row.member?.phone ?? null,
+      attendees: row.attendees_count,
       profileId: row.member?.profile_id ?? null,
       orgName: row.org?.short_name ?? row.org?.name ?? null,
       title: row.internal_title,
@@ -198,6 +203,8 @@ async function displaceInternal(
       reference: ctx.reference,
       at: now,
       from_room_id: row.room_id,
+      from_starts_at: row.starts_at,
+      from_ends_at: row.ends_at,
       original_status: row.booking_status,
     };
 
@@ -619,7 +626,11 @@ export async function createPublicBooking(
   const overlaps = await findOverlaps(room.id, startsAt, endsAt);
   const externalHit = overlaps.some((o) => o.source === "external");
   const internalHits = overlaps.filter((o) => o.source === "internal");
-  if (externalHit || (internalHits.length > 0 && !cfg.allow_override_internal)) {
+  const protectUntil = now.getTime() + Math.max(0, cfg.override_protect_minutes ?? 0) * 60_000;
+  const protectedHit =
+    (cfg.override_protect_minutes ?? 0) > 0 &&
+    internalHits.some((o) => new Date(o.starts_at).getTime() < protectUntil);
+  if (externalHit || protectedHit || (internalHits.length > 0 && !cfg.allow_override_internal)) {
     return {
       ok: false,
       error: "slot_taken",
@@ -898,17 +909,27 @@ async function notifyPublicBooking(opts: {
       title: d.title,
       action: d.action,
       toRoomName: d.toRoomName,
+      phone: d.memberPhone ?? null,
+      attendees: d.attendees ?? null,
     }));
+    const adminUrl = `${publicBaseUrl()}/admin/overrides?focus=${displaced[0].id}`;
+    const paymentNote =
+      opts.amountDue > 0
+        ? `ลูกค้ายังไม่ชำระ — ต้องชำระภายใน ${bkkDateLabel(opts.holdExpiresAt)} ${bkkTime(opts.holdExpiresAt)} น. ถ้าไม่ชำระระบบคืนคิวภายในให้อัตโนมัติ (ยังไม่ต้องรีบย้าย)`
+        : `รอทีมงานยืนยันกับลูกค้า (กันห้องถึง ${bkkDateLabel(opts.holdExpiresAt)} ${bkkTime(opts.holdExpiresAt)} น.)`;
     jobs.push(
       dispatchEvent(
         "booking.override",
         queueOverrideTemplate({
           reference: opts.reference,
-          customerName: input.name,
+          customerName: input.company ? `${input.company} (${input.name})` : input.name,
+          customerPhone: phone,
           roomName: opts.roomName,
           startsAt: opts.startsAt,
           endsAt: opts.endsAt,
           displaced: summaries,
+          paymentNote,
+          adminUrl,
         }),
       ),
     );
@@ -925,7 +946,7 @@ async function notifyPublicBooking(opts: {
               : `${s.reference} ${s.who} → ปล่อยคิว ต้องหาเวลาใหม่`,
           )
           .join(" · "),
-        link: "/admin/calendar",
+        link: `/admin/overrides?focus=${displaced[0].id}`,
         relatedId: opts.bookingId,
       }),
     );

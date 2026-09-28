@@ -20,7 +20,6 @@ import {
   type PublicBusyBlock,
 } from "@/lib/public-booking/shared";
 import { LiveBadge, PublicFooter, PublicTopBar } from "./_components/chrome";
-import { getPublicPaymentInfo } from "@/lib/server/payment-slips";
 import { MyBookingsStrip } from "./_components/my-bookings";
 
 export const dynamic = "force-dynamic";
@@ -43,13 +42,14 @@ export default async function PublicRoomsIndex({
   const config = await getPublicRoomConfig();
   if (!config.enabled) return notFound();
 
-  const [rooms, payment] = await Promise.all([listPublicRooms(), getPublicPaymentInfo()]);
+  const rooms = await listPublicRooms();
   const today = bkkToday();
   const busy = await listPublicBusy({
     roomIds: rooms.map((r) => r.id),
     fromDate: today,
     days: 1,
     includeInternal: !config.allow_override_internal,
+    protectMinutes: config.override_protect_minutes,
   });
   const now = new Date();
 
@@ -57,32 +57,12 @@ export default async function PublicRoomsIndex({
     <>
       <PublicTopBar channel={channel} right={<LiveBadge />} />
 
-      <section className="mx-auto max-w-6xl px-4 pt-8 sm:px-6 sm:pt-12">
-        <p className="text-[12px] font-medium tracking-tight text-ink-3">EasySpace · Meeting Rooms</p>
-        <h1 className="mt-2 max-w-xl text-[30px] font-bold leading-[1.1] tracking-tightest sm:text-[44px]">
-          ห้องประชุมพร้อมใช้
-          <br className="hidden sm:block" /> จองออนไลน์ได้ในหนึ่งนาที
-        </h1>
-        <p className="mt-3 max-w-lg text-[14.5px] leading-relaxed text-ink-2">
-          เช็กเวลาว่างแบบเรียลไทม์ เลือกห้องและเวลาที่ต้องการ แล้วกดจองได้ทันที
-          {payment.ready
-            ? " ชำระเงินและแนบสลิป ระบบยืนยันการจองให้อัตโนมัติ"
-            : " ทีมงานจะติดต่อยืนยันทุกการจอง"}
-        </p>
-        <p className="mt-4 text-[13px] font-medium text-ink-3">
-          {[
-            "ห้องว่างจริง อัปเดตสด",
-            payment.ready ? "ชำระออนไลน์ ตรวจสลิปอัตโนมัติ" : "ยังไม่ต้องชำระตอนจอง",
-            payment.ready ? "ยืนยันการจองทันที" : "ยืนยันโดยทีมงาน",
-          ].join("  ·  ")}
-        </p>
-      </section>
 
       <MyBookingsStrip channel={channel} />
 
-      <section className="mx-auto max-w-6xl px-4 pt-8 sm:px-6">
-        <div className="mb-3 flex items-end justify-between">
-          <h2 className="text-[18px] font-bold tracking-tighter">เลือกห้องประชุม</h2>
+      <section className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 sm:pt-10">
+        <div className="mb-4 flex items-end justify-between">
+          <h1 className="text-[24px] font-bold tracking-tighter sm:text-[28px]">เลือกห้องประชุม</h1>
           <p className="text-[12px] text-ink-3">{rooms.length} ห้อง · เปิด 08:30–22:00</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

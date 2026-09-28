@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useEffect, useRef } from "react";
+import { BankLogo, bankDisplayName } from "@/components/bank-logo";
 import {
   TrendingUp,
   TrendingDown,
@@ -22,7 +23,7 @@ import {
   Upload,
   CalendarClock,
   Banknote,
-  Building2,
+
   X,
   Bell,
   Hand,
@@ -1758,12 +1759,10 @@ function SettingsTab({
                 key={b.id}
                 className="rounded-input border border-line p-3 flex items-start gap-3"
               >
-                <span className="w-9 h-9 rounded-input bg-primary-50 text-primary-700 grid place-items-center shrink-0">
-                  <Building2 size={16} />
-                </span>
+                <BankLogo bank={b.bank_name} size={40} />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold tracking-tight text-sm">
-                    {b.bank_name}{" "}
+                    {bankDisplayName(b.bank_name)}{" "}
                     {b.is_default && (
                       <Badge tone="primary" className="!text-[9px] ml-1">
                         default

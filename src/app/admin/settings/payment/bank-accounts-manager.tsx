@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus, Pencil, Trash2, X, Building2, Save } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { upsertBankAccount, deleteBankAccount } from "@/lib/actions/settings";
+import { BankLogo, bankDisplayName } from "@/components/bank-logo";
+import { BankSelect } from "@/components/bank-select";
 import type { BankAccount } from "@/lib/data/finance";
 
 export function BankAccountsManager({ banks }: { banks: BankAccount[] }) {
@@ -62,13 +64,11 @@ export function BankAccountsManager({ banks }: { banks: BankAccount[] }) {
                 key={b.id}
                 className="rounded-input border border-line p-3 flex items-start gap-3 group"
               >
-                <span className="w-9 h-9 rounded-input bg-primary-50 text-primary-700 grid place-items-center shrink-0">
-                  <Building2 size={16} />
-                </span>
+                <BankLogo bank={b.bank_name} size={40} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <p className="font-semibold tracking-tight text-sm">
-                      {b.bank_name}
+                      {bankDisplayName(b.bank_name)}
                     </p>
                     {b.is_default && (
                       <Badge tone="primary" className="!text-[9px]">
@@ -144,6 +144,10 @@ function BankAccountForm({
   function save(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if (!form.bank_name.trim()) {
+      setErr("กรุณาเลือกธนาคาร");
+      return;
+    }
     startTransition(async () => {
       const r = await upsertBankAccount({
         id: form.id,
@@ -164,7 +168,7 @@ function BankAccountForm({
         onSubmit={save}
         className="w-full max-w-md surface-card !p-0 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden"
       >
-        <div className="shrink-0 p-5 bg-gradient-to-br from-primary-50 to-white border-b border-line-soft flex items-start justify-between">
+        <div className="shrink-0 p-5 border-b border-line-soft flex items-start justify-between">
           <p className="font-bold tracking-tight">
             {form.id ? "แก้ไขบัญชี" : "เพิ่มบัญชีใหม่"}
           </p>
@@ -179,13 +183,9 @@ function BankAccountForm({
         <div className="flex-1 overflow-y-auto p-5 space-y-3">
           <div>
             <Label>ธนาคาร *</Label>
-            <Input
+            <BankSelect
               value={form.bank_name}
-              onChange={(e) =>
-                setForm({ ...form, bank_name: e.target.value })
-              }
-              placeholder="ไทยพาณิชย์ / กสิกรไทย / กรุงเทพ"
-              required
+              onChange={(v) => setForm({ ...form, bank_name: v })}
             />
           </div>
           <div>

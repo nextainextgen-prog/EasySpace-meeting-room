@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { dispatchEvent } from "@/lib/server/notifications";
 import { restoreDisplacedFor } from "@/lib/server/public-booking";
 import { sendBookingLine } from "@/lib/server/booking-line";
+import { notifyOverrideFinal } from "@/lib/server/overrides";
 import { getCurrentProfile, requireRole } from "@/lib/auth";
 import { listBookingsForRange } from "@/lib/data/bookings";
 import {
@@ -502,6 +503,7 @@ export async function setBookingStatus(
   if (input.status === "confirmed" || input.status === "cancelled") {
     void sendBookingLine(input.bookingId, input.status === "confirmed" ? "confirmed" : "cancelled");
   }
+  if (input.status === "confirmed") void notifyOverrideFinal(input.bookingId);
 
   revalidatePath("/admin/calendar");
   revalidatePath("/admin/bookings");

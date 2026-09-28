@@ -267,7 +267,7 @@ async function main() {
   if (!b3.ok) throw new Error("b3");
   await sb.from("bookings").update({ hold_expires_at: new Date(Date.now() - 60_000).toISOString() } as never).eq("id", b3.bookingId);
   const busy = await listPublicBusy({ roomIds: [MEETING], fromDate: bkkParts(new Date()).date, days: 30, includeInternal: false });
-  ok("lapsed hold not shown as busy", !(busy.get(MEETING) ?? []).some((b) => b.startsAt === b3.startsAt));
+  ok("lapsed hold not shown as busy", !(busy.get(MEETING) ?? []).some((b) => new Date(b.startsAt).getTime() === new Date(b3.startsAt).getTime()));
   const b4 = await book("14:00", "0990000104");
   ok("someone else can book the lapsed slot", b4.ok, JSON.stringify(b4));
   const r3 = await row(b3.bookingId);

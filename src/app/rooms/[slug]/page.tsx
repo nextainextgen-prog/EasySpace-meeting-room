@@ -41,6 +41,7 @@ export default async function PublicRoomPage({ params, searchParams }: PageProps
       fromDate: bkkToday(),
       days: config.booking_days_ahead + 1,
       includeInternal: !config.allow_override_internal,
+      protectMinutes: config.override_protect_minutes,
     }),
     listPublicPackages([room.id]),
     getPublicPaymentInfo(),

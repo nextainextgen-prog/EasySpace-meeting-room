@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { getSlipImage, reviewSlipAction } from "@/lib/actions/online-payment";
+import { BankLogo } from "@/components/bank-logo";
 
 export interface SlipRow {
   id: string;
@@ -267,16 +268,10 @@ export function SlipsBoard({ rows }: { rows: SlipRow[] }) {
                       </p>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-ink-1">{r.senderName ?? "-"}</p>
-                      <p className="text-xs text-ink-3">
-                        {[r.senderBank, r.senderAccount].filter(Boolean).join(" · ") || ""}
-                      </p>
+                      <AccountCell bank={r.senderBank} name={r.senderName} account={r.senderAccount} />
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-ink-1">{r.receiverName ?? "-"}</p>
-                      <p className="text-xs text-ink-3">
-                        {[r.receiverBank, r.receiverAccount].filter(Boolean).join(" · ") || ""}
-                      </p>
+                      <AccountCell bank={r.receiverBank} name={r.receiverName} account={r.receiverAccount} />
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-ink-2">{r.slipType ?? "-"}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
@@ -320,6 +315,27 @@ export function SlipsBoard({ rows }: { rows: SlipRow[] }) {
       </div>
 
       {open && <SlipDrawer row={open} onClose={() => setOpen(null)} />}
+    </div>
+  );
+}
+
+function AccountCell({
+  bank,
+  name,
+  account,
+}: {
+  bank: string | null;
+  name: string | null;
+  account: string | null;
+}) {
+  if (!bank && !name) return <span className="text-ink-3">-</span>;
+  return (
+    <div className="flex items-center gap-2.5">
+      <BankLogo bank={bank} size={30} />
+      <div className="min-w-0">
+        <p className="truncate text-ink-1">{name ?? "-"}</p>
+        <p className="text-xs text-ink-3 tabular-nums">{[bank, account].filter(Boolean).join(" · ")}</p>
+      </div>
     </div>
   );
 }
@@ -398,8 +414,6 @@ function SlipDrawer({ row, onClose }: { row: SlipRow; onClose: () => void }) {
     ["ยอดในสลิป", baht(row.amount)],
     ["เลขอ้างอิง", row.transRef ?? "-"],
     ["วันเวลาโอน", row.slipDate ? fmtDate(row.slipDate) : "-"],
-    ["ผู้โอน", [row.senderName, row.senderBank, row.senderAccount].filter(Boolean).join(" · ") || "-"],
-    ["ผู้รับ", [row.receiverName, row.receiverBank, row.receiverAccount].filter(Boolean).join(" · ") || "-"],
     ["ผล API", `${row.statusLabel}${row.apiMessage ? ` (${row.apiMessage})` : ""}`],
   ];
 
@@ -446,6 +460,18 @@ function SlipDrawer({ row, onClose }: { row: SlipRow; onClose: () => void }) {
                   <dd className="font-medium text-ink-1">{v}</dd>
                 </div>
               ))}
+              <div>
+                <dt className="text-xs text-ink-3">ผู้โอน</dt>
+                <dd className="mt-1">
+                  <AccountCell bank={row.senderBank} name={row.senderName} account={row.senderAccount} />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-ink-3">ผู้รับ</dt>
+                <dd className="mt-1">
+                  <AccountCell bank={row.receiverBank} name={row.receiverName} account={row.receiverAccount} />
+                </dd>
+              </div>
               {row.reviewNote && (
                 <div>
                   <dt className="text-xs text-ink-3">บันทึกการตรวจ</dt>
