@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:plan": "tsx --env-file=.env.local scripts/test-reschedule-plan.ts",
+    "test:reschedule": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/run.ts",
+    "test:public": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/public-booking.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
@@ -40,6 +43,7 @@
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.14",
+    "tsx": "^4.23.13",
     "typescript": "^5.6.3"
   }
 }

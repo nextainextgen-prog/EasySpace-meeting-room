@@ -88,6 +88,8 @@ export type TelegramEventKey =
   | "booking.hold"
   | "booking.hold_expiring"
   | "booking.hold_expired"
+  | "booking.public"
+  | "booking.override"
   | "payment.paid"
   | "payment.deposit"
   | "payment.free"

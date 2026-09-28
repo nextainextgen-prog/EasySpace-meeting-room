@@ -1,15 +1,15 @@
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "เช็กห้องว่าง — EasySpace",
-  description: "สแกน QR เพื่อดูเวลาว่างของห้องประชุมแบบ real-time",
+  title: "จองห้องประชุม — EasySpace",
+  description: "เช็กห้องว่างแบบเรียลไทม์และจองห้องประชุมออนไลน์ได้ทันที",
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0f172a",
+  themeColor: "#FFFFFF",
 };
 
 export default function RoomsLayout({
@@ -17,9 +17,5 @@ export default function RoomsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-white via-surface-subtle/40 to-white">
-      {children}
-    </div>
-  );
+  return <div className="min-h-dvh bg-[#F6F7FB] text-ink-1">{children}</div>;
 }

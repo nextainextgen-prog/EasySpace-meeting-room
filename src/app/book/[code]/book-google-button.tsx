@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { createSupabaseBrowserClient } from "@/lib/integrations/supabase/client";
+import { startGoogleOAuth } from "@/lib/integrations/supabase/client";
 import { cn } from "@/lib/cn";
 
 const LAST_INVITE_COOKIE = "easyspace.last_invite";
@@ -26,13 +26,11 @@ export function BookGoogleButton({ inviteCode }: Props) {
   async function signIn() {
     setError(null);
     setPending(true);
-    const supabase = createSupabaseBrowserClient();
     const origin =
       typeof window !== "undefined" ? window.location.origin : "";
-    const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${origin}/api/auth/callback` },
-    });
+    const { error: err } = await startGoogleOAuth(
+      `${origin}/api/auth/callback`,
+    );
     if (err) {
       setPending(false);
       setError(err.message);

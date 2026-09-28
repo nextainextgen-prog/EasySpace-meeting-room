@@ -260,6 +260,124 @@ export function QrPublicManager({
         </div>
       </Card>
 
+      {/* ── Online booking ── */}
+      <Card>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <p className="font-semibold tracking-tight">จองออนไลน์ (ลูกค้าภายนอก)</p>
+            <p className="text-xs text-ink-3 mt-0.5">
+              ลูกค้าสแกน QR หรือกดริชเมนู LINE แล้วจองได้เลย · ห้องถูกกันไว้เป็น
+              "รอยืนยัน" จนกว่าทีมงานจะยืนยัน
+            </p>
+          </div>
+          <Badge
+            tone={form.booking_enabled ? "success" : "muted"}
+            className="!text-[10px]"
+          >
+            {form.booking_enabled ? "เปิดรับจอง" : "ดูอย่างเดียว"}
+          </Badge>
+        </div>
+
+        <div className="space-y-3">
+          <ToggleRow
+            checked={form.booking_enabled}
+            onChange={(v) => setForm({ ...form, booking_enabled: v })}
+            title="เปิดให้ลูกค้าจองจากหน้า public"
+            sub="ถ้าปิด หน้า /rooms จะแสดงเวลาว่าง + ปุ่ม LINE / โทร แบบเดิม"
+          />
+          <ToggleRow
+            checked={form.allow_override_internal}
+            onChange={(v) => setForm({ ...form, allow_override_internal: v })}
+            title="ลูกค้าภายนอกจองทับคิวภายใน (Thunder ฯลฯ) ได้"
+            sub="ลูกค้าจะไม่เห็นคิวภายในเลย · เมื่อจองทับ ระบบแจ้ง Telegram + กระดิ่งแอดมิน + กระดิ่งสมาชิกเจ้าของคิว"
+          />
+          <ToggleRow
+            checked={form.auto_relocate_internal}
+            disabled={!form.allow_override_internal}
+            onChange={(v) => setForm({ ...form, auto_relocate_internal: v })}
+            title="ย้ายคิวภายในไปห้องอื่นที่ว่างเวลาเดิมอัตโนมัติ"
+            sub="ถ้าไม่มีห้องว่าง คิวภายในจะถูกปล่อย และคืนให้อัตโนมัติหากลูกค้ายกเลิก/ไม่ยืนยัน"
+          />
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label>จองล่วงหน้าได้ (วัน)</Label>
+              <Select
+                value={String(form.booking_days_ahead)}
+                onChange={(e) =>
+                  setForm({ ...form, booking_days_ahead: Number(e.target.value) })
+                }
+              >
+                {[7, 14, 30, 60, 90].map((d) => (
+                  <option key={d} value={d}>
+                    {d} วัน
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label>ขั้นต่ำต่อครั้ง</Label>
+              <Select
+                value={String(form.min_duration_minutes)}
+                onChange={(e) =>
+                  setForm({ ...form, min_duration_minutes: Number(e.target.value) })
+                }
+              >
+                {[30, 60, 90, 120].map((m) => (
+                  <option key={m} value={m}>
+                    {m < 60 ? `${m} นาที` : `${m / 60} ชม.`}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label>สูงสุดต่อครั้ง</Label>
+              <Select
+                value={String(form.max_duration_minutes)}
+                onChange={(e) =>
+                  setForm({ ...form, max_duration_minutes: Number(e.target.value) })
+                }
+              >
+                {[4, 6, 8, 10, 12, 13.5].map((h) => (
+                  <option key={h} value={h * 60}>
+                    {h === 13.5 ? "ทั้งวัน" : `${h} ชม.`}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label>ข้อความหลังจองสำเร็จ</Label>
+            <Input
+              value={form.confirm_message}
+              onChange={(e) =>
+                setForm({ ...form, confirm_message: e.target.value })
+              }
+              placeholder={defaults.confirm_message}
+            />
+          </div>
+
+          <LinkRow
+            label="ลิงก์สำหรับ LINE OA Rich Menu"
+            url={`${origin}/rooms?src=line`}
+            sub="ตั้งเป็น action ของปุ่มริชเมนู · ลูกค้าจะเห็นทุกห้องและเลือกจองได้"
+          />
+
+          <div className="flex justify-end pt-2 border-t border-line-soft">
+            <Button
+              variant="primary"
+              size="sm"
+              iconLeft={<Save size={12} />}
+              onClick={save}
+              disabled={pending}
+            >
+              {pending ? "บันทึก..." : "บันทึกการตั้งค่าการจอง"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
       {/* ── Slug mapping ── */}
       <Card>
         <p className="font-semibold tracking-tight mb-1">
@@ -313,7 +431,8 @@ export function QrPublicManager({
           <li>
             กด <b>Download QR</b> หรือ <b>Print</b> ในแต่ละ slug
           </li>
-          <li>นำ QR ไปติดหน้าห้อง — ลูกค้าสแกนแล้วจะเข้า /rooms/&lt;slug&gt;</li>
+          <li>นำ QR ไปติดหน้าห้อง — ลูกค้าสแกนแล้วเช็กเวลาว่างและจองได้ทันทีที่ /rooms/&lt;slug&gt;</li>
+          <li>ตั้งลิงก์ <code className="font-mono">/rooms?src=line</code> เป็นปุ่มริชเมนู LINE OA</li>
         </ol>
         <p className="text-[11px] text-ink-3 mt-2">
           ลิงก์ทำงานทันทีหลังบันทึก — ไม่ต้อง deploy ใหม่
@@ -467,12 +586,12 @@ function QrPreview({
   @media print { .noprint { display: none; } @page { size: A4; margin: 0; } }
 </style></head><body>
 <div class="card">
-  <p class="eyebrow">EasySpace · เช็กห้องว่าง</p>
+  <p class="eyebrow">EasySpace · Meeting Room</p>
   <h1>${roomName}</h1>
-  <p>สแกนเพื่อดูเวลาว่างของห้องนี้</p>
+  <p>สแกนเพื่อเช็กเวลาว่างและจองห้องนี้ได้ทันที</p>
   <img src="${printUrl}" alt="QR" />
   <code>${url}</code>
-  <div class="badge">📱 สแกนผ่านกล้องโทรศัพท์</div>
+  <div class="badge">สแกนผ่านกล้องโทรศัพท์หรือ LINE</div>
 </div>
 <script>window.onload=()=>window.print();</script>
 </body></html>`);
@@ -515,6 +634,75 @@ function QrPreview({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ToggleRow({
+  checked,
+  onChange,
+  title,
+  sub,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  title: string;
+  sub: string;
+  disabled?: boolean;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex items-start gap-2.5 px-3 py-2.5 rounded-input border border-line bg-white text-sm",
+        disabled && "opacity-50",
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="w-4 h-4 mt-0.5 accent-primary-600"
+      />
+      <span>
+        <span className="block font-medium tracking-tight">{title}</span>
+        <span className="block text-xs text-ink-3 mt-0.5">{sub}</span>
+      </span>
+    </label>
+  );
+}
+
+function LinkRow({ label, url, sub }: { label: string; url: string; sub: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="rounded-input border border-primary-100 bg-primary-50/40 px-3 py-2.5">
+      <p className="text-xs font-semibold text-primary-700">{label}</p>
+      <div className="mt-1 flex items-center gap-2">
+        <code className="flex-1 truncate font-mono text-xs text-ink-1">{url}</code>
+        <button
+          type="button"
+          onClick={() => {
+            void navigator.clipboard.writeText(url);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+          className="inline-flex items-center gap-1 rounded-pill bg-white px-2.5 h-7 text-[11px] font-semibold text-primary-700 border border-primary-100"
+        >
+          {copied ? <CheckCircle2 size={12} /> : <Copy size={12} />}
+          {copied ? "คัดลอกแล้ว" : "คัดลอก"}
+        </button>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="w-7 h-7 rounded-pill grid place-items-center text-primary-700 hover:bg-white"
+          title="เปิดดู"
+        >
+          <ExternalLink size={12} />
+        </a>
+      </div>
+      <p className="text-[11px] text-ink-3 mt-1">{sub}</p>
     </div>
   );
 }

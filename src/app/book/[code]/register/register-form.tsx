@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Check, AlertCircle, Loader2 } from "lucide-react";
 import { Input, Label } from "@/components/ui/input";
 import { registerMember } from "@/lib/actions/members";
-import { createSupabaseBrowserClient } from "@/lib/integrations/supabase/client";
+import { startGoogleOAuth } from "@/lib/integrations/supabase/client";
 import { cn } from "@/lib/cn";
 
 interface Props {
@@ -57,12 +57,8 @@ export function RegisterForm({ inviteCode, allowedDomains, initialEmail = "" }: 
     )}; path=/; max-age=900; SameSite=Lax`;
 
     setOauthPending(true);
-    const supabase = createSupabaseBrowserClient();
     const origin = window.location.origin;
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${origin}/api/auth/callback` },
-    });
+    const { error } = await startGoogleOAuth(`${origin}/api/auth/callback`);
     if (error) {
       setOauthPending(false);
       setFeedback({

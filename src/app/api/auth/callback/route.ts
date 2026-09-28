@@ -7,6 +7,7 @@ import type { Database } from "@/lib/types/database";
 import {
   authCookieOptions,
   isSupabaseAuthCookie,
+  isSupabaseSessionCookie,
 } from "@/lib/integrations/supabase/cookie-options";
 
 const REGISTER_COOKIE = "easyspace.register_intent";
@@ -50,7 +51,16 @@ export async function GET(request: NextRequest) {
       cookieOptions: authCookieOptions(),
       cookies: {
         getAll() {
-          return request.cookies.getAll();
+          // Hide the visitor's *previous* session from the client doing the
+          // exchange. GoTrueClient recovers whatever session it can see the
+          // moment it is constructed, and both outcomes of that recovery —
+          // _saveSession() on a successful refresh, _removeSession() on a
+          // failed one — delete the PKCE code-verifier. The verifier is the
+          // only thing this request needs; the old session is about to be
+          // replaced anyway.
+          return request.cookies
+            .getAll()
+            .filter((c) => !isSupabaseSessionCookie(c.name));
         },
         setAll(cookiesToSet: CookieToSet[]) {
           pendingCookies.push(...cookiesToSet);
@@ -62,6 +72,16 @@ export async function GET(request: NextRequest) {
   /** Redirect that carries every cookie Supabase asked us to write. */
   function redirectWithSession(to: string) {
     const response = NextResponse.redirect(to);
+    const written = new Set(pendingCookies.map((c) => c.name));
+    // Because the old session cookies were hidden above, Supabase could not
+    // clean up its own stale chunks. Expire anything it did not just rewrite,
+    // or a leftover `.1` from a longer previous token would shadow the new
+    // session on the very next request.
+    for (const c of request.cookies.getAll()) {
+      if (isSupabaseAuthCookie(c.name) && !written.has(c.name)) {
+        response.cookies.set(c.name, "", { path: "/", maxAge: 0 });
+      }
+    }
     for (const { name, value, options } of pendingCookies) {
       response.cookies.set(name, value, options);
     }

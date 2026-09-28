@@ -19,12 +19,12 @@ export default async function QrPublicPage() {
     <>
       <AdminTopbar
         title="QR หน้าห้อง (Public)"
-        subtitle="/rooms/* · ลิงก์ LINE · QR download"
+        subtitle="/rooms/* · จองออนไลน์ · ลิงก์ LINE · QR download"
       />
       <div className="p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
         <SettingsShell
           title="QR หน้าห้อง"
-          description="ตั้งค่าหน้า /rooms/[slug] ที่ลูกค้าสแกน QR หน้าห้องเพื่อเช็กเวลาว่าง — กำหนด slug, ลิงก์ LINE, จำนวนวันที่แสดง, แล้วดาวน์โหลด QR ไปติดหน้าห้อง"
+          description="หน้า /rooms สำหรับลูกค้าภายนอก — สแกน QR หน้าห้องหรือกดริชเมนู LINE เพื่อเช็กเวลาว่างและจองได้ทันที · ตั้งค่าการจอง, slug, ลิงก์ LINE แล้วดาวน์โหลด QR"
         >
           <QrPublicManager
             rooms={rooms.map((r) => ({

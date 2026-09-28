@@ -4,6 +4,7 @@ import {
   Coffee,
   Clock,
   CalendarOff,
+  CalendarClock,
   Receipt,
   CreditCard,
   Tag,
@@ -77,6 +78,12 @@ export const SETTINGS_GROUPS: Group[] = [
         icon: Receipt,
         title: "นโยบายการจอง",
         desc: "มัดจำ · ยกเลิก · no-show",
+      },
+      {
+        href: "/admin/settings/member-reschedule",
+        icon: CalendarClock,
+        title: "ผู้ใช้ภายในเลื่อนเวลาเอง",
+        desc: "สิทธิ์ · แจ้งล่วงหน้า · buffer",
       },
       {
         href: "/admin/settings/qr-public",

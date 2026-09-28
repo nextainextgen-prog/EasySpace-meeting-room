@@ -1,4 +1,10 @@
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
+import { addDays, bkkParts, fromBkk } from "@/lib/time/bkk";
+import {
+  mergeBlocks,
+  type PublicBusyBlock,
+  type PublicPackage,
+} from "@/lib/public-booking/shared";
 
 export interface PublicRoomConfig {
   enabled: boolean;
@@ -10,6 +16,24 @@ export interface PublicRoomConfig {
   show_capacity: boolean;
   show_hourly_rate: boolean;
   slug_map: Record<string, string>; // slug → room_id
+
+  // ─── Online booking (external customers) ───
+  /** Let customers book from the QR / LINE page instead of only viewing. */
+  booking_enabled: boolean;
+  /**
+   * External customers may take a slot an internal org already holds. The
+   * internal booking is moved to another free room when possible, otherwise
+   * released — and both the team and the member are told.
+   */
+  allow_override_internal: boolean;
+  /** Try another free room for the displaced internal meeting first. */
+  auto_relocate_internal: boolean;
+  /** How far ahead the calendar opens. */
+  booking_days_ahead: number;
+  min_duration_minutes: number;
+  max_duration_minutes: number;
+  /** Shown on the confirmation screen. */
+  confirm_message: string;
 }
 
 export const DEFAULT_PUBLIC_ROOM_CONFIG: PublicRoomConfig = {
@@ -22,6 +46,14 @@ export const DEFAULT_PUBLIC_ROOM_CONFIG: PublicRoomConfig = {
   show_capacity: true,
   show_hourly_rate: true,
   slug_map: {},
+  booking_enabled: true,
+  allow_override_internal: true,
+  auto_relocate_internal: true,
+  booking_days_ahead: 30,
+  min_duration_minutes: 60,
+  max_duration_minutes: 8 * 60,
+  confirm_message:
+    "ทีมงานจะติดต่อกลับเพื่อยืนยันการจองและแจ้งช่องทางชำระเงินภายใน 30 นาที (ในเวลาทำการ)",
 };
 
 export async function getPublicRoomConfig(): Promise<PublicRoomConfig> {
@@ -35,39 +67,8 @@ export async function getPublicRoomConfig(): Promise<PublicRoomConfig> {
   return { ...DEFAULT_PUBLIC_ROOM_CONFIG, ...(value ?? {}) };
 }
 
-/**
- * Resolve a public slug to a room record. Falls back to fuzzy name match
- * when no explicit mapping exists (e.g. slug `meeting` → name "MEETING ROOM").
- */
-export async function resolvePublicRoom(slug: string) {
-  const cfg = await getPublicRoomConfig();
-  const supabase = createSupabaseAdminClient();
-  const slugLower = slug.toLowerCase();
-  const mappedId = cfg.slug_map[slugLower];
-
-  if (mappedId) {
-    const { data } = await supabase
-      .from("rooms")
-      .select(
-        "id, name, size, capacity_min, capacity_max, hourly_rate, color, thumbnail_url, gallery_urls, amenities, perks, floor, status",
-      )
-      .eq("id", mappedId)
-      .maybeSingle();
-    if (data) return { room: data as PublicRoom, config: cfg };
-  }
-
-  // Fallback: case-insensitive contains match
-  const { data } = await supabase
-    .from("rooms")
-    .select(
-      "id, name, size, capacity_min, capacity_max, hourly_rate, color, thumbnail_url, gallery_urls, amenities, perks, floor, status",
-    )
-    .ilike("name", `%${slug}%`)
-    .order("display_order")
-    .limit(1)
-    .maybeSingle();
-  return { room: (data as PublicRoom | null) ?? null, config: cfg };
-}
+const ROOM_COLUMNS =
+  "id, name, size, capacity_min, capacity_max, hourly_rate, color, thumbnail_url, gallery_urls, amenities, perks, floor, status, display_order";
 
 export interface PublicRoom {
   id: string;
@@ -83,110 +84,142 @@ export interface PublicRoom {
   perks: string[];
   floor: string | null;
   status: string;
+  display_order: number;
 }
 
-/** Pull a few days' worth of bookings for the room (anonymous — no
- *  customer name). Returns slots grouped by date. */
-export async function listPublicAvailability(roomId: string, days: number) {
+function normaliseRoom(r: PublicRoom): PublicRoom {
+  return {
+    ...r,
+    hourly_rate: Number(r.hourly_rate),
+    gallery_urls: r.gallery_urls ?? [],
+    amenities: r.amenities ?? [],
+    perks: r.perks ?? [],
+  };
+}
+
+/** The slug a room is published under — mapping first, name-derived fallback. */
+export function slugForRoom(cfg: PublicRoomConfig, room: { id: string; name: string }) {
+  for (const [slug, id] of Object.entries(cfg.slug_map)) {
+    if (id === room.id) return slug;
+  }
+  return room.name.toLowerCase().replace(/\s+room$/, "").replace(/\s+/g, "-");
+}
+
+/**
+ * Resolve a public slug to a room record. Falls back to fuzzy name match
+ * when no explicit mapping exists (e.g. slug `meeting` → name "MEETING ROOM").
+ */
+export async function resolvePublicRoom(slug: string) {
+  const cfg = await getPublicRoomConfig();
   const supabase = createSupabaseAdminClient();
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + days);
-  end.setHours(23, 59, 59, 999);
+  const slugLower = slug.toLowerCase();
+  const mappedId = cfg.slug_map[slugLower];
+
+  if (mappedId) {
+    const { data } = await supabase
+      .from("rooms")
+      .select(ROOM_COLUMNS)
+      .eq("id", mappedId)
+      .maybeSingle();
+    if (data) return { room: normaliseRoom(data as unknown as PublicRoom), config: cfg };
+  }
 
   const { data } = await supabase
-    .from("bookings")
-    .select("starts_at, ends_at, booking_status")
-    .eq("room_id", roomId)
-    .in("booking_status", ["pending", "confirmed", "in_use"])
-    .gte("starts_at", start.toISOString())
-    .lte("starts_at", end.toISOString())
-    .order("starts_at");
-
-  return ((data ?? []) as Array<{
-    starts_at: string;
-    ends_at: string;
-    booking_status: string;
-  }>).map((b) => ({
-    starts_at: b.starts_at,
-    ends_at: b.ends_at,
-    in_use: b.booking_status === "in_use",
-  }));
+    .from("rooms")
+    .select(ROOM_COLUMNS)
+    .ilike("name", `%${slugLower.replace(/-/g, " ")}%`)
+    .order("display_order")
+    .limit(1)
+    .maybeSingle();
+  return {
+    room: data ? normaliseRoom(data as unknown as PublicRoom) : null,
+    config: cfg,
+  };
 }
 
-/** Lightweight info for the "other rooms" strip at the bottom */
-export async function listOtherPublicRoomStrips(excludeRoomId: string) {
-  const cfg = await getPublicRoomConfig();
+export async function listPublicRooms(): Promise<PublicRoom[]> {
   const supabase = createSupabaseAdminClient();
   const { data } = await supabase
     .from("rooms")
-    .select("id, name, color, thumbnail_url")
+    .select(ROOM_COLUMNS)
     .eq("status", "active")
-    .neq("id", excludeRoomId)
     .order("display_order");
-  const rooms = (data ?? []) as Array<{
+  return ((data ?? []) as unknown as PublicRoom[]).map(normaliseRoom);
+}
+
+export async function listPublicPackages(roomIds: string[]): Promise<
+  Map<string, PublicPackage[]>
+> {
+  const out = new Map<string, PublicPackage[]>();
+  if (roomIds.length === 0) return out;
+  const supabase = createSupabaseAdminClient();
+  const { data } = await supabase
+    .from("room_packages")
+    .select("id, room_id, name, hours, price")
+    .eq("is_active", true)
+    .in("room_id", roomIds)
+    .order("hours");
+  for (const p of (data ?? []) as Array<{
     id: string;
+    room_id: string;
     name: string;
-    color: string;
-    thumbnail_url: string | null;
-  }>;
-
-  // Reverse-lookup the slug for each room
-  const slugForRoom = new Map<string, string>();
-  for (const [s, rid] of Object.entries(cfg.slug_map)) {
-    if (!slugForRoom.has(rid)) slugForRoom.set(rid, s);
+    hours: number;
+    price: number;
+  }>) {
+    const list = out.get(p.room_id) ?? [];
+    list.push({ id: p.id, name: p.name, hours: Number(p.hours), price: Number(p.price) });
+    out.set(p.room_id, list);
   }
+  return out;
+}
 
-  const now = new Date();
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+/**
+ * What an external customer is allowed to see as "taken".
+ *
+ * Only other external customers' bookings block the public — an internal
+ * org's meeting is flexible and gives way (see `lib/server/public-booking`),
+ * so it is invisible here. When the admin switches override off, internal
+ * bookings block too, but still show as a nameless block.
+ *
+ * Blocks are merged so a run of back-to-back bookings can't be counted.
+ */
+export async function listPublicBusy(opts: {
+  roomIds: string[];
+  fromDate: string;
+  days: number;
+  includeInternal: boolean;
+}): Promise<Map<string, PublicBusyBlock[]>> {
+  const out = new Map<string, PublicBusyBlock[]>();
+  for (const id of opts.roomIds) out.set(id, []);
+  if (opts.roomIds.length === 0) return out;
 
-  const results: Array<{
-    id: string;
-    name: string;
-    color: string;
-    thumbnail_url: string | null;
-    slug: string | null;
-    is_busy_now: boolean;
-    next_free_at: string | null;
-  }> = [];
+  const from = fromBkk(opts.fromDate, "00:00").toISOString();
+  const to = fromBkk(addDays(opts.fromDate, opts.days), "00:00").toISOString();
 
-  for (const r of rooms) {
-    const slug =
-      slugForRoom.get(r.id) ??
-      r.name.toLowerCase().replace(/\s+room$/, "").replace(/\s+/g, "-");
-    const { data: bookingsRaw } = await supabase
-      .from("bookings")
-      .select("starts_at, ends_at")
-      .eq("room_id", r.id)
-      .in("booking_status", ["pending", "confirmed", "in_use"])
-      .gte("starts_at", today.toISOString())
-      .lte("starts_at", tomorrow.toISOString())
-      .order("starts_at");
-    const bookings = ((bookingsRaw ?? []) as Array<{
-      starts_at: string;
-      ends_at: string;
-    }>) ?? [];
-    const isBusyNow = bookings.some(
-      (b) =>
-        new Date(b.starts_at) <= now && new Date(b.ends_at) > now,
-    );
-    const nextFree = bookings.find(
-      (b) => new Date(b.starts_at) > now,
-    )?.starts_at ?? null;
+  const supabase = createSupabaseAdminClient();
+  let query = supabase
+    .from("bookings")
+    .select("room_id, starts_at, ends_at, source")
+    .in("room_id", opts.roomIds)
+    .in("booking_status", ["pending", "confirmed", "in_use"])
+    .lt("starts_at", to)
+    .gt("ends_at", from)
+    .order("starts_at");
+  if (!opts.includeInternal) query = query.eq("source", "external");
 
-    results.push({
-      id: r.id,
-      name: r.name,
-      color: r.color,
-      thumbnail_url: r.thumbnail_url,
-      slug,
-      is_busy_now: isBusyNow,
-      next_free_at: nextFree,
-    });
+  const { data } = await query;
+  for (const b of (data ?? []) as Array<{
+    room_id: string;
+    starts_at: string;
+    ends_at: string;
+  }>) {
+    out.get(b.room_id)?.push({ startsAt: b.starts_at, endsAt: b.ends_at });
   }
-  return results;
+  for (const [id, blocks] of out) out.set(id, mergeBlocks(blocks));
+  return out;
+}
+
+/** Today in Bangkok, `YYYY-MM-DD`. */
+export function bkkToday(): string {
+  return bkkParts(new Date()).date;
 }

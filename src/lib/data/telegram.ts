@@ -40,19 +40,20 @@ export async function listTelegramRoutes(): Promise<TelegramRoute[]> {
 }
 
 /**
- * Returns (chat_id, topic_id) for the given event, or null if no route /
- * disabled / no group found.
+ * Returns (chat_id, topic_id) for the given event, null when the route is
+ * disabled / its group is gone, and undefined when no row exists at all.
  */
 export async function getRouteForEvent(
   event: TelegramEventKey,
-): Promise<{ chatId: string; topicId?: number } | null> {
+): Promise<{ chatId: string; topicId?: number } | null | undefined> {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("telegram_routes")
     .select("topic_id, enabled, group:telegram_groups(chat_id, is_active)")
     .eq("event_key", event)
     .maybeSingle();
-  if (error || !data) return null;
+  if (error) return null;
+  if (!data) return undefined;
   const row = data as unknown as {
     topic_id: number | null;
     enabled: boolean;

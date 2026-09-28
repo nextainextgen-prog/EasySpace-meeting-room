@@ -16,6 +16,9 @@ import { getCurrentMember } from "@/lib/data/members";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { formatDate, formatTimeRange, durationHours } from "@/lib/format";
 import { CancelBookingButton } from "./cancel-button";
+import { ReschedulePanel } from "./reschedule-panel";
+import { getSeriesSummary } from "@/lib/actions/member-reschedule";
+import { bkkParts } from "@/lib/time/bkk";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +88,7 @@ export default async function MemberBookingDetailPage({ params }: PageProps) {
   const audit = (auditRaw ?? []) as unknown as AuditEntry[];
 
   const hours = durationHours(booking.starts_at, booking.ends_at);
+  const series = isOwner ? await getSeriesSummary(booking.id) : null;
   const status = booking.booking_status;
   const isCancelled = status === "cancelled";
   const isPast = new Date(booking.ends_at) < new Date();
@@ -182,11 +186,23 @@ export default async function MemberBookingDetailPage({ params }: PageProps) {
         )}
 
         {isUpcoming && isOwner && (
-          <div className="mt-5 pt-5 border-t border-line-soft flex justify-end">
-            <CancelBookingButton
-              bookingId={booking.id}
-              memberId={ctx.member.id}
-            />
+          <div className="mt-5 pt-5 border-t border-line-soft space-y-3">
+            <div className="flex flex-wrap gap-2 justify-end">
+              <ReschedulePanel
+                bookingId={booking.id}
+                currentWeekday={bkkParts(booking.starts_at).weekday}
+                currentTime={bkkParts(booking.starts_at).time}
+                currentDurationMin={Math.round(hours * 60)}
+                roomName={booking.room?.name ?? "—"}
+                isSeries={series?.isSeries ?? false}
+                followingCount={series?.followingCount ?? 1}
+                futureCount={series?.futureCount ?? 1}
+              />
+              <CancelBookingButton
+                bookingId={booking.id}
+                memberId={ctx.member.id}
+              />
+            </div>
           </div>
         )}
       </Card>
@@ -275,6 +291,12 @@ function actionLabel(action: string) {
       return "แก้ไขข้อมูล";
     case "cancelled":
       return "ยกเลิกการจอง";
+    case "rescheduled":
+      return "เลื่อนวัน/เวลา";
+    case "series_rescheduled":
+      return "เลื่อนทั้งซีรีส์";
+    case "moved":
+      return "ย้ายเวลา/ห้อง";
     case "paid":
       return "บันทึกการชำระ";
     case "restored":

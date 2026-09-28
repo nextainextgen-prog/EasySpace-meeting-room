@@ -14,9 +14,22 @@ import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
  * Silently skips when no route is configured or disabled — never throws,
  * because notifications are side-effects and shouldn't fail the action.
  */
+/**
+ * Events added after the routing table was seeded borrow an existing route
+ * until their own row exists, so shipping the code ahead of the migration
+ * never silently drops a message.
+ */
+const ROUTE_FALLBACK: Partial<Record<TelegramEventKey, TelegramEventKey>> = {
+  "booking.public": "booking.hold",
+  "booking.override": "booking.created",
+};
+
 export async function dispatchEvent(event: TelegramEventKey, text: string) {
   try {
-    const route = await getRouteForEvent(event);
+    const fallback = ROUTE_FALLBACK[event];
+    let route = await getRouteForEvent(event);
+    // Only a missing row falls back — a route the admin disabled stays off.
+    if (route === undefined && fallback) route = await getRouteForEvent(fallback);
     if (!route) {
       console.warn(`[notify] no route for ${event}`);
       return { ok: false, reason: "no_route" as const };
@@ -37,6 +50,8 @@ const EVENT_TO_CATEGORY: Partial<Record<TelegramEventKey, NotificationCategory>>
   "booking.created": "system",
   "booking.updated": "system",
   "booking.cancelled": "system",
+  "booking.public": "system",
+  "booking.override": "system",
   "payment.paid": "finance",
   "payment.deposit": "finance",
   "payment.free": "finance",

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { dispatchEvent } from "@/lib/server/notifications";
+import { restoreDisplacedFor } from "@/lib/server/public-booking";
 import { getCurrentProfile, requireRole } from "@/lib/auth";
 import { listBookingsForRange } from "@/lib/data/bookings";
 import {
@@ -66,7 +67,7 @@ export async function moveBooking(raw: z.infer<typeof MoveSchema>) {
   const supabase = createSupabaseAdminClient();
   const { data: current } = await supabase
     .from("bookings")
-    .select("id, room_id, starts_at, ends_at, reference_code")
+    .select("id, room_id, starts_at, ends_at, reference_code, metadata")
     .eq("id", input.bookingId)
     .single();
   if (!current) return { ok: false as const, error: "not_found" };
@@ -76,6 +77,7 @@ export async function moveBooking(raw: z.infer<typeof MoveSchema>) {
     starts_at: string;
     ends_at: string;
     reference_code: string;
+    metadata: Record<string, unknown> | null;
   };
 
   const roomId = input.roomId ?? c.room_id;
@@ -123,10 +125,14 @@ export async function moveBooking(raw: z.infer<typeof MoveSchema>) {
     },
   } as never);
 
-  // Clear alerts_sent so time-alerts cron re-evaluates against the new time
+  // Clear alerts_sent so time-alerts cron re-evaluates against the new time.
+  // Merge rather than replace — metadata also carries the recurrence definition
+  // and the sibling link, and overwriting it orphans the whole series.
   await supabase
     .from("bookings")
-    .update({ metadata: { alerts_sent: [] } as never } as never)
+    .update({
+      metadata: { ...(c.metadata ?? {}), alerts_sent: [] } as never,
+    } as never)
     .eq("id", input.bookingId);
 
   // Auto-resolve stale in-app notifications tied to this booking
@@ -486,6 +492,12 @@ export async function setBookingStatus(
     },
   } as never);
 
+  // A customer booking that pushed an internal meeting out is going away —
+  // hand the internal meeting its slot back.
+  if (input.status === "cancelled" || input.status === "no_show") {
+    await restoreDisplacedFor(input.bookingId);
+  }
+
   revalidatePath("/admin/calendar");
   revalidatePath("/admin/bookings");
   revalidatePath("/admin/finance");
@@ -613,6 +625,8 @@ export async function bulkCancelBookings(
       }),
     );
   }
+
+  for (const id of parsed.data.ids) await restoreDisplacedFor(id);
 
   revalidatePath("/admin/calendar");
   return { ok: true as const, count: parsed.data.ids.length };

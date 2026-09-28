@@ -26,6 +26,8 @@ const groupedEvents = [
       "booking.updated",
       "booking.cancelled",
       "booking.hold",
+      "booking.public",
+      "booking.override",
     ],
   },
   {
@@ -64,6 +66,8 @@ const eventLabels: Record<string, string> = {
   "booking.updated": "แก้ไขการจอง",
   "booking.cancelled": "ยกเลิกการจอง",
   "booking.hold": "ติดจอง (ยังไม่ชำระ)",
+  "booking.public": "ลูกค้าจองออนไลน์ (QR / LINE)",
+  "booking.override": "ลูกค้าภายนอกขอทับคิวภายใน",
   "booking.hold_expiring": "ติดจองใกล้หมดอายุ",
   "booking.hold_expired": "ติดจองหมดอายุ / ปล่อยห้องคืน",
   "payment.paid": "ชำระเต็มจำนวน",

@@ -6,6 +6,7 @@ import {
   holdExpiredTemplate,
 } from "@/lib/templates/telegram";
 import { HOLD_WARNING_HOURS } from "@/lib/booking-hold";
+import { restoreDisplacedFor } from "@/lib/server/public-booking";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +94,10 @@ export async function GET(request: Request) {
         reason: "ติดจองหมดอายุ",
       })) as never,
     );
+
+    // An online booking that never got confirmed gives internal meetings
+    // it displaced their slot back.
+    for (const r of expired) await restoreDisplacedFor(r.id);
 
     for (const r of expired) {
       void dispatchEvent(

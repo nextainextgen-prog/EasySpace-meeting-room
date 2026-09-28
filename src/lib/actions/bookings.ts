@@ -9,6 +9,7 @@ import {
   findCustomerCandidates,
 } from "@/lib/data";
 import { dispatchEvent } from "@/lib/server/notifications";
+import { restoreDisplacedFor } from "@/lib/server/public-booking";
 import { recordAudit } from "./audit";
 import {
   bookingCreatedTemplate,
@@ -901,6 +902,7 @@ export async function cancelBooking(input: {
     targetId: input.bookingId,
     reason: input.reason,
   });
+  await restoreDisplacedFor(input.bookingId);
 
   revalidatePath("/admin/calendar");
   revalidatePath("/admin/bookings");

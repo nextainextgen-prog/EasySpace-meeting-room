@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { createSupabaseBrowserClient } from "@/lib/integrations/supabase/client";
+import { startGoogleOAuth } from "@/lib/integrations/supabase/client";
 import { cn } from "@/lib/cn";
 
 export function MemberLoginForm() {
@@ -12,13 +12,9 @@ export function MemberLoginForm() {
   async function signInWithGoogle() {
     setError(null);
     setPending(true);
-    const supabase = createSupabaseBrowserClient();
     const origin =
       typeof window !== "undefined" ? window.location.origin : "";
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${origin}/api/auth/callback` },
-    });
+    const { error } = await startGoogleOAuth(`${origin}/api/auth/callback`);
     if (error) {
       setPending(false);
       setError(error.message);

@@ -22,8 +22,10 @@ import { getOrgUsage } from "@/lib/data/organizations";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 
 export const dynamic = "force-dynamic";
-import { format } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import { th } from "date-fns/locale";
+
+const TZ = process.env.APP_TIMEZONE ?? "Asia/Bangkok";
 
 interface UpcomingBooking {
   id: string;
@@ -158,9 +160,12 @@ export default async function MemberDashboard() {
           label="จองล่าสุด"
           value={
             upcoming[0]
-              ? format(new Date(upcoming[0].starts_at), "d MMM HH:mm", {
-                  locale: th,
-                })
+              ? formatInTimeZone(
+                  upcoming[0].starts_at,
+                  TZ,
+                  "d MMM HH:mm",
+                  { locale: th },
+                )
               : "—"
           }
           icon={Calendar}
@@ -225,11 +230,14 @@ export default async function MemberDashboard() {
                       {b.internal_title ?? "Booking"}
                     </p>
                     <p className="text-xs text-ink-3 tabular-nums">
-                      {format(new Date(b.starts_at), "EEE d MMM HH:mm", {
-                        locale: th,
-                      })}
+                      {formatInTimeZone(
+                        b.starts_at,
+                        TZ,
+                        "EEE d MMM HH:mm",
+                        { locale: th },
+                      )}
                       {" – "}
-                      {format(new Date(b.ends_at), "HH:mm")} ·{" "}
+                      {formatInTimeZone(b.ends_at, TZ, "HH:mm")} ·{" "}
                       {b.room?.name ?? "—"}
                       {b.attendees_count ? ` · ${b.attendees_count} คน` : ""}
                     </p>

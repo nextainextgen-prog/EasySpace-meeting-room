@@ -52,3 +52,14 @@ export function readRememberFlag(cookieHeader: string | undefined): boolean {
 export function isSupabaseAuthCookie(name: string): boolean {
   return name.startsWith("sb-");
 }
+
+/** The PKCE code-verifier cookie (possibly chunked), as opposed to the
+ *  session token cookies. */
+export function isSupabaseVerifierCookie(name: string): boolean {
+  return isSupabaseAuthCookie(name) && name.includes("-code-verifier");
+}
+
+/** The session token cookies — everything Supabase owns except the verifier. */
+export function isSupabaseSessionCookie(name: string): boolean {
+  return isSupabaseAuthCookie(name) && !isSupabaseVerifierCookie(name);
+}

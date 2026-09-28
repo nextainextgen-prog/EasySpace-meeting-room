@@ -2,6 +2,7 @@ import { escapeHtml } from "@/lib/integrations/telegram";
 import { formatBaht, formatTimeRange } from "@/lib/format";
 import { format as fnsFormat } from "date-fns";
 import { th } from "date-fns/locale";
+import { bkkDateLabel, bkkTime } from "@/lib/time/bkk";
 
 /** Divider used between sections in all Telegram templates. */
 const SEP = "--------------------------";
@@ -900,5 +901,126 @@ export function dormantMembersTemplate(opts: {
   }
   lines.push(SEP);
   lines.push("💬 ส่ง LINE/Email ทักทาย · พิจารณา archive");
+  return lines.join("\n");
+}
+
+/* ─── Public (QR / LINE) self-service booking ─── */
+
+function bkkWhen(startsAt: string, endsAt: string): { date: string; time: string } {
+  return {
+    date: bkkDateLabel(startsAt),
+    time: `${bkkTime(startsAt)} – ${bkkTime(endsAt)} น.`,
+  };
+}
+
+export interface DisplacedSummary {
+  reference: string;
+  who: string;
+  title?: string | null;
+  action: "relocated" | "released";
+  toRoomName?: string | null;
+}
+
+/** Telegram template — an external customer booked from the public page. */
+export function publicBookingTemplate(opts: {
+  reference: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string | null;
+  company?: string | null;
+  attendees?: number | null;
+  roomName: string;
+  startsAt: string;
+  endsAt: string;
+  channelLabel: string;
+  totalAmount: number;
+  packageName?: string | null;
+  expiresAt?: string | null;
+  note?: string | null;
+  displacedCount: number;
+}): string {
+  const when = bkkWhen(opts.startsAt, opts.endsAt);
+  const lines: string[] = [];
+  lines.push("🛎️ <b>จองออนไลน์ใหม่ — รอทีมงานยืนยัน</b>");
+  lines.push(SEP);
+  lines.push(`🎫 <b>รหัสการจอง:</b> <code>${escapeHtml(opts.reference)}</code>`);
+  lines.push(`🏢 <b>ผู้จอง:</b> ${escapeHtml(opts.customerName)}`);
+  if (opts.company) lines.push(`🏷️ <b>บริษัท:</b> ${escapeHtml(opts.company)}`);
+  lines.push(`📞 <b>เบอร์โทร:</b> ${escapeHtml(opts.customerPhone)}`);
+  if (opts.customerEmail) lines.push(`✉️ <b>อีเมล:</b> ${escapeHtml(opts.customerEmail)}`);
+  lines.push(SEP);
+  lines.push(`🏛️ <b>ห้อง:</b> ${escapeHtml(opts.roomName)}`);
+  lines.push(`📅 <b>วันที่:</b> ${when.date}`);
+  lines.push(`⏰ <b>เวลา:</b> ${when.time}`);
+  if (opts.attendees) lines.push(`👥 <b>ผู้เข้าร่วม:</b> ${opts.attendees} ท่าน`);
+  lines.push(
+    `💰 <b>ราคาประเมิน:</b> ${formatBaht(opts.totalAmount)}${opts.packageName ? ` (${escapeHtml(opts.packageName)})` : ""}`,
+  );
+  lines.push(`📲 <b>ช่องทาง:</b> ${escapeHtml(opts.channelLabel)}`);
+  if (opts.note) {
+    lines.push("");
+    lines.push(`📝 <b>หมายเหตุลูกค้า:</b> ${escapeHtml(opts.note)}`);
+  }
+  lines.push(SEP);
+  lines.push("⚠️ กันห้องให้ลูกค้าแล้ว — โทรยืนยันและแจ้งช่องทางชำระเงิน");
+  if (opts.expiresAt) {
+    lines.push(
+      `⌛ <b>ยืนยันภายใน:</b> ${bkkDateLabel(opts.expiresAt)} ${bkkTime(opts.expiresAt)} น.`,
+    );
+  }
+  if (opts.displacedCount > 0) {
+    lines.push(`🔁 ทับคิวภายใน ${opts.displacedCount} รายการ — ดูรายละเอียดในข้อความถัดไป`);
+  }
+  return lines.join("\n");
+}
+
+/** Telegram template — a customer booking took a slot an internal org held. */
+export function queueOverrideTemplate(opts: {
+  reference: string;
+  customerName: string;
+  roomName: string;
+  startsAt: string;
+  endsAt: string;
+  displaced: DisplacedSummary[];
+}): string {
+  const when = bkkWhen(opts.startsAt, opts.endsAt);
+  const lines: string[] = [];
+  lines.push("🔁 <b>ลูกค้าภายนอกขอทับคิวภายใน</b>");
+  lines.push(SEP);
+  lines.push(`🎫 <b>การจองลูกค้า:</b> <code>${escapeHtml(opts.reference)}</code> · ${escapeHtml(opts.customerName)}`);
+  lines.push(`🏛️ <b>ห้อง:</b> ${escapeHtml(opts.roomName)}`);
+  lines.push(`📅 <b>ช่วงเวลา:</b> ${when.date} ${when.time}`);
+  lines.push(SEP);
+  lines.push("<b>คิวภายในที่ได้รับผลกระทบ</b>");
+  for (const d of opts.displaced) {
+    const title = d.title ? ` — ${escapeHtml(d.title)}` : "";
+    lines.push(`• <code>${escapeHtml(d.reference)}</code> ${escapeHtml(d.who)}${title}`);
+    lines.push(
+      d.action === "relocated"
+        ? `   ✅ ย้ายไปห้อง <b>${escapeHtml(d.toRoomName ?? "-")}</b> เวลาเดิมอัตโนมัติ`
+        : "   ⚠️ ไม่มีห้องว่างเวลาเดิม — ปล่อยคิวแล้ว ต้องหาเวลาใหม่",
+    );
+  }
+  lines.push(SEP);
+  lines.push("แจ้งสมาชิกในระบบแล้ว · ถ้าลูกค้ายกเลิกหรือไม่ยืนยัน ระบบจะคืนคิวที่ถูกปล่อยให้อัตโนมัติ (ถ้าห้องยังว่าง)");
+  return lines.join("\n");
+}
+
+/** Telegram template — a released internal booking got its slot back. */
+export function queueRestoredTemplate(opts: {
+  customerReference: string;
+  roomName: string;
+  restored: Array<{ reference: string; who: string; startsAt: string; endsAt: string }>;
+}): string {
+  const lines: string[] = [];
+  lines.push("↩️ <b>คืนคิวภายในแล้ว</b>");
+  lines.push(SEP);
+  lines.push(
+    `การจองลูกค้า <code>${escapeHtml(opts.customerReference)}</code> ถูกยกเลิก/หมดอายุ — คืนคิวที่เคยถูกทับกลับห้อง ${escapeHtml(opts.roomName)}`,
+  );
+  for (const r of opts.restored) {
+    const when = bkkWhen(r.startsAt, r.endsAt);
+    lines.push(`• <code>${escapeHtml(r.reference)}</code> ${escapeHtml(r.who)} · ${when.date} ${when.time}`);
+  }
   return lines.join("\n");
 }

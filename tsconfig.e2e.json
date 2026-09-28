@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/lib/auth": [
+        "./scripts/e2e/stub-auth.ts"
+      ],
+      "@/lib/data/members": [
+        "./scripts/e2e/stub-members.ts"
+      ],
+      "@/lib/server/notifications": [
+        "./scripts/e2e/stub-notifications.ts"
+      ],
+      "next/cache": [
+        "./scripts/e2e/stub-next-cache.ts"
+      ],
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  }
+}
