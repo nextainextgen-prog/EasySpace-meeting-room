@@ -6,6 +6,7 @@ import { ArrowUpRight, Minus, Plus } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { addDays, bkkParts, fromBkk, timeToMinutes } from "@/lib/time/bkk";
 import {
+  PUBLIC_CLOSE_TIME,
   PUBLIC_SLOT_MINUTES,
   dateChip,
   durationLabel,
@@ -185,12 +186,16 @@ export function BookingFlow({
         setHint(null);
         return;
       }
-      // Tapping later inside the free run stretches the booking to that slot.
-      if (tMin > sMin && tMin + PUBLIC_SLOT_MINUTES - sMin <= Math.min(maxRun, maxDur)) {
-        setDuration(Math.max(minDur, tMin + PUBLIC_SLOT_MINUTES - sMin));
+      // Second tap = END time: 20:00 then 21:00 books 20:00–21:00.
+      if (tMin > sMin && tMin - sMin <= Math.min(maxRun, maxDur)) {
+        setDuration(Math.max(minDur, tMin - sMin));
         setHint(null);
         return;
       }
+    }
+    if (t === PUBLIC_CLOSE_TIME) {
+      setHint("แตะเวลาเริ่มก่อน แล้วค่อยแตะเวลาสิ้นสุด");
+      return;
     }
     const run = maxRunFrom(date, t, busy, now);
     if (run < minDur) {
@@ -485,9 +490,17 @@ function PickerCard(p: PickerProps) {
 
   const chip = dateChip(p.date);
   const starts = publicStartTimes();
-  const cells = starts.map((t) => ({ t, state: slotState(p.date, t, p.busy, p.now) }));
-  const visible = cells.filter((c) => c.state !== "past");
-  const freeMinutes = visible.filter((c) => c.state === "free").length * PUBLIC_SLOT_MINUTES;
+  const startCells: Array<{ t: string; state: "free" | "busy" | "past" | "close" }> = starts.map((t) => ({
+    t,
+    state: slotState(p.date, t, p.busy, p.now),
+  }));
+  const freeMinutes = startCells.filter((c) => c.state === "free").length * PUBLIC_SLOT_MINUTES;
+  // Closing time is never a start, but it is a valid end.
+  const openStarts = startCells.filter((c) => c.state !== "past");
+  const visible = openStarts.length
+    ? [...openStarts, { t: PUBLIC_CLOSE_TIME, state: "close" as const }]
+    : [];
+  const reach = p.start ? Math.min(p.maxRun, p.maxDur) : 0;
 
   const groups = [
     { label: "ช่วงเช้า", cells: visible.filter((c) => timeToMinutes(c.t) < 12 * 60) },
@@ -595,26 +608,39 @@ function PickerCard(p: PickerProps) {
               <div className="grid grid-cols-4 gap-1.5">
                 {g.cells.map(({ t, state }) => {
                   const m = timeToMinutes(t);
-                  const inRange = p.start && m >= sMin && m < eMin;
-                  const isEdge = inRange && (m === sMin || m + PUBLIC_SLOT_MINUTES === eMin);
+                  const isStart = Boolean(p.start) && m === sMin;
+                  const isEnd = Boolean(p.start) && m === eMin;
+                  const inRange = Boolean(p.start) && m > sMin && m < eMin;
+                  const isEdge = isStart || isEnd;
+                  // A busy slot (or closing time) still works as the END of a booking.
+                  const canEndHere = Boolean(p.start) && m > sMin && m - sMin <= reach;
+                  const disabled = (state === "busy" || state === "close") && !canEndHere && !isEnd;
                   return (
                     <button
                       key={t}
                       type="button"
-                      disabled={state === "busy"}
+                      disabled={disabled}
                       onClick={() => p.pickTime(t)}
-                      aria-pressed={Boolean(inRange)}
+                      aria-pressed={isEdge || inRange}
+                      aria-label={isEnd ? `สิ้นสุด ${t}` : isStart ? `เริ่ม ${t}` : t}
                       className={cn(
                         "h-11 rounded-[12px] border text-[13.5px] font-semibold tracking-tight tabular-nums transition",
-                        state === "busy" &&
-                          "cursor-not-allowed border-transparent bg-[repeating-linear-gradient(135deg,#F1F5F9_0_5px,#E8EDF3_5px_10px)] text-ink-3/80 line-through decoration-ink-3/50",
-                        state === "free" && !inRange &&
+                        state === "busy" && !isEdge &&
+                          "border-transparent bg-[repeating-linear-gradient(135deg,#F1F5F9_0_5px,#E8EDF3_5px_10px)] text-ink-3/80 line-through decoration-ink-3/50 disabled:cursor-not-allowed",
+                        state === "close" && !isEdge &&
+                          "border-dashed border-slate-900/[0.12] bg-white text-ink-3 disabled:cursor-not-allowed",
+                        state === "free" && !inRange && !isEdge &&
                           "border-slate-900/[0.08] bg-white text-ink-1 hover:border-primary-600/40 hover:bg-primary-50/40",
                         inRange && !isEdge && "border-primary-100 bg-primary-50 text-primary-700",
                         isEdge && "border-primary-600 bg-primary-600 text-white shadow-[0_6px_14px_-6px_rgba(45,78,245,0.7)]",
                       )}
                     >
                       {t}
+                      {isStart && isEnd ? null : isStart ? (
+                        <span className="block text-[9.5px] font-medium leading-none opacity-80">เริ่ม</span>
+                      ) : isEnd ? (
+                        <span className="block text-[9.5px] font-medium leading-none opacity-80">สิ้นสุด</span>
+                      ) : null}
                     </button>
                   );
                 })}
