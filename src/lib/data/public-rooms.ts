@@ -34,6 +34,22 @@ export interface PublicRoomConfig {
   max_duration_minutes: number;
   /** Shown on the confirmation screen. */
   confirm_message: string;
+
+  // ─── Online payment (slip upload, verified by EasySlip) ───
+  /** Ask for a transfer + slip right after booking. */
+  payment_enabled: boolean;
+  /** Deposit up front, or the whole amount. */
+  payment_mode: "deposit" | "full";
+  deposit_percent: number;
+  /** How long an unpaid online booking holds the room. */
+  payment_hold_minutes: number;
+
+  // ─── LINE ───
+  /**
+   * LIFF app (LINE Login channel, same provider as the OA). Endpoint URL in
+   * the LINE console must be `<site>/rooms`. Empty = no LINE messages.
+   */
+  liff_id: string;
 }
 
 export const DEFAULT_PUBLIC_ROOM_CONFIG: PublicRoomConfig = {
@@ -54,7 +70,30 @@ export const DEFAULT_PUBLIC_ROOM_CONFIG: PublicRoomConfig = {
   max_duration_minutes: 8 * 60,
   confirm_message:
     "ทีมงานจะติดต่อกลับเพื่อยืนยันการจองและแจ้งช่องทางชำระเงินภายใน 30 นาที (ในเวลาทำการ)",
+  payment_enabled: true,
+  payment_mode: "deposit",
+  deposit_percent: 30,
+  payment_hold_minutes: 60,
+  liff_id: "",
 };
+
+/** Canonical public origin for links that leave the site (LINE, e-mail). */
+export function publicBaseUrl(): string {
+  const env = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (env && !/localhost|127\.0\.0\.1/.test(env)) return env;
+  return "https://easy-space-meeting-room-yjqk.vercel.app";
+}
+
+/**
+ * Link to a customer's booking. Through LIFF when configured, so it opens
+ * inside LINE already signed in; plain web otherwise.
+ */
+export function bookingStatusUrl(cfg: Pick<PublicRoomConfig, "liff_id">, reference: string, token: string) {
+  const path = `booking/${encodeURIComponent(reference)}?t=${encodeURIComponent(token)}&src=line`;
+  return cfg.liff_id
+    ? `https://liff.line.me/${cfg.liff_id}/${path}`
+    : `${publicBaseUrl()}/rooms/${path}`;
+}
 
 export async function getPublicRoomConfig(): Promise<PublicRoomConfig> {
   const supabase = createSupabaseAdminClient();
@@ -199,7 +238,7 @@ export async function listPublicBusy(opts: {
   const supabase = createSupabaseAdminClient();
   let query = supabase
     .from("bookings")
-    .select("room_id, starts_at, ends_at, source")
+    .select("room_id, starts_at, ends_at, source, booking_status, hold_expires_at")
     .in("room_id", opts.roomIds)
     .in("booking_status", ["pending", "confirmed", "in_use"])
     .lt("starts_at", to)
@@ -208,11 +247,19 @@ export async function listPublicBusy(opts: {
   if (!opts.includeInternal) query = query.eq("source", "external");
 
   const { data } = await query;
+  const now = Date.now();
   for (const b of (data ?? []) as Array<{
     room_id: string;
     starts_at: string;
     ends_at: string;
+    booking_status: string;
+    hold_expires_at: string | null;
   }>) {
+    // A hold past its deadline is already free — the daily cron just hasn't
+    // swept it yet. Booking it releases it (see expireLapsedHolds).
+    if (b.booking_status === "pending" && b.hold_expires_at && new Date(b.hold_expires_at).getTime() <= now) {
+      continue;
+    }
     out.get(b.room_id)?.push({ startsAt: b.starts_at, endsAt: b.ends_at });
   }
   for (const [id, blocks] of out) out.set(id, mergeBlocks(blocks));

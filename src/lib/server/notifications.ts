@@ -22,6 +22,7 @@ import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 const ROUTE_FALLBACK: Partial<Record<TelegramEventKey, TelegramEventKey>> = {
   "booking.public": "booking.hold",
   "booking.override": "booking.created",
+  "payment.slip_review": "payment.paid",
 };
 
 export async function dispatchEvent(event: TelegramEventKey, text: string) {
@@ -56,6 +57,7 @@ const EVENT_TO_CATEGORY: Partial<Record<TelegramEventKey, NotificationCategory>>
   "payment.deposit": "finance",
   "payment.free": "finance",
   "payment.refund": "finance",
+  "payment.slip_review": "finance",
   "outstanding.alert": "finance",
   "finance.daily_brief": "ai_digest",
   "finance.weekly_summary": "ai_digest",

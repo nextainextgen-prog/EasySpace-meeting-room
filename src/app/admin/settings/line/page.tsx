@@ -2,6 +2,9 @@ import { AdminTopbar } from "@/components/admin/topbar";
 import { SettingsShell } from "../_shell";
 import { JsonSettingEditor } from "../_json-editor";
 import { getSettingValue } from "@/lib/actions/settings";
+import { getPublicRoomConfig, publicBaseUrl } from "@/lib/data/public-rooms";
+import { getIntegrationStatus } from "@/lib/actions/online-payment";
+import { LineMessagingCard } from "./line-messaging-card";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +28,11 @@ const DEFAULT = {
 };
 
 export default async function LineSettingsPage() {
-  const v = await getSettingValue("line.oa");
+  const [v, cfg, integrations] = await Promise.all([
+    getSettingValue("line.oa"),
+    getPublicRoomConfig(),
+    getIntegrationStatus(),
+  ]);
   return (
     <>
       <AdminTopbar title="LINE OA" subtitle="Webhook · auto-reply · rich menu" />
@@ -34,6 +41,12 @@ export default async function LineSettingsPage() {
           title="LINE OA"
           description="เชื่อม Official Account · Webhook + auto-reply keywords · rich menu"
         >
+          <div className="space-y-5">
+          <LineMessagingCard
+            liffId={cfg.liff_id}
+            token={integrations?.line ?? { masked: null, source: "none" }}
+            baseUrl={publicBaseUrl()}
+          />
           <JsonSettingEditor
             settingKey="line.oa"
             category="notifications"
@@ -41,6 +54,7 @@ export default async function LineSettingsPage() {
             initial={v}
             hint="ตั้ง webhook URL ใน LINE Developer Console: /api/line/webhook"
           />
+          </div>
         </SettingsShell>
       </div>
     </>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, SearchX } from "lucide-react";
 import { getPublicRoomConfig } from "@/lib/data/public-rooms";
 import { getPublicBookingView } from "@/lib/server/public-booking";
+import { getPublicPaymentInfo } from "@/lib/server/payment-slips";
 import { parseChannel } from "@/lib/public-booking/shared";
 import { PublicFooter, PublicTopBar } from "../../_components/chrome";
 import { BookingStatus } from "./booking-status";
@@ -22,9 +23,10 @@ export default async function PublicBookingStatusPage({
 }) {
   const [{ ref }, { t, src }] = await Promise.all([params, searchParams]);
   const channel = parseChannel(src);
-  const [view, config] = await Promise.all([
+  const [view, config, payment] = await Promise.all([
     getPublicBookingView(decodeURIComponent(ref), t ?? ""),
     getPublicRoomConfig(),
+    getPublicPaymentInfo(),
   ]);
 
   return (
@@ -35,6 +37,7 @@ export default async function PublicBookingStatusPage({
           view={view}
           token={t ?? ""}
           channel={channel}
+          payment={payment}
           config={{
             line_url: config.line_url,
             line_id: config.line_id,

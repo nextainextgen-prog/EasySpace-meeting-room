@@ -938,6 +938,8 @@ export function publicBookingTemplate(opts: {
   expiresAt?: string | null;
   note?: string | null;
   displacedCount: number;
+  /** Transfer the customer was asked to make online; 0 = team confirms by phone. */
+  amountDue?: number;
 }): string {
   const when = bkkWhen(opts.startsAt, opts.endsAt);
   const lines: string[] = [];
@@ -962,11 +964,20 @@ export function publicBookingTemplate(opts: {
     lines.push(`📝 <b>หมายเหตุลูกค้า:</b> ${escapeHtml(opts.note)}`);
   }
   lines.push(SEP);
-  lines.push("⚠️ กันห้องให้ลูกค้าแล้ว — โทรยืนยันและแจ้งช่องทางชำระเงิน");
-  if (opts.expiresAt) {
+  if (opts.amountDue && opts.amountDue > 0) {
     lines.push(
-      `⌛ <b>ยืนยันภายใน:</b> ${bkkDateLabel(opts.expiresAt)} ${bkkTime(opts.expiresAt)} น.`,
+      `⏳ กันห้องแล้ว รอลูกค้าโอน <b>${formatBaht(opts.amountDue)}</b> และแนบสลิป — ระบบยืนยันให้อัตโนมัติเมื่อสลิปผ่าน`,
     );
+    if (opts.expiresAt) {
+      lines.push(`⌛ <b>ต้องชำระภายใน:</b> ${bkkDateLabel(opts.expiresAt)} ${bkkTime(opts.expiresAt)} น.`);
+    }
+  } else {
+    lines.push("⚠️ กันห้องให้ลูกค้าแล้ว — โทรยืนยันและแจ้งช่องทางชำระเงิน");
+    if (opts.expiresAt) {
+      lines.push(
+        `⌛ <b>ยืนยันภายใน:</b> ${bkkDateLabel(opts.expiresAt)} ${bkkTime(opts.expiresAt)} น.`,
+      );
+    }
   }
   if (opts.displacedCount > 0) {
     lines.push(`🔁 ทับคิวภายใน ${opts.displacedCount} รายการ — ดูรายละเอียดในข้อความถัดไป`);
@@ -1022,5 +1033,34 @@ export function queueRestoredTemplate(opts: {
     const when = bkkWhen(r.startsAt, r.endsAt);
     lines.push(`• <code>${escapeHtml(r.reference)}</code> ${escapeHtml(r.who)} · ${when.date} ${when.time}`);
   }
+  return lines.join("\n");
+}
+
+/** Telegram template — an uploaded slip EasySlip couldn't accept on its own. */
+export function slipReviewTemplate(opts: {
+  reference: string;
+  customerName: string;
+  customerPhone?: string | null;
+  roomName: string;
+  statusLabel: string;
+  amount: number | null;
+  expected: number;
+  senderName?: string | null;
+  receiverName?: string | null;
+}): string {
+  const lines: string[] = [];
+  lines.push("🧾 <b>สลิปต้องตรวจสอบ</b>");
+  lines.push(SEP);
+  lines.push(`🎫 <b>รหัสการจอง:</b> <code>${escapeHtml(opts.reference)}</code>`);
+  lines.push(`🏢 <b>ผู้จอง:</b> ${escapeHtml(opts.customerName)}`);
+  if (opts.customerPhone) lines.push(`📞 <b>เบอร์โทร:</b> ${escapeHtml(opts.customerPhone)}`);
+  lines.push(`🏛️ <b>ห้อง:</b> ${escapeHtml(opts.roomName)}`);
+  lines.push(SEP);
+  lines.push(`⚠️ <b>ผลตรวจ:</b> ${escapeHtml(opts.statusLabel)}`);
+  lines.push(`💰 <b>ยอดในสลิป:</b> ${opts.amount != null ? formatBaht(opts.amount) : "-"} / ต้องชำระ ${formatBaht(opts.expected)}`);
+  if (opts.senderName) lines.push(`👤 <b>ผู้โอน:</b> ${escapeHtml(opts.senderName)}`);
+  if (opts.receiverName) lines.push(`🏦 <b>ผู้รับ:</b> ${escapeHtml(opts.receiverName)}`);
+  lines.push(SEP);
+  lines.push("ตรวจและกดอนุมัติ/ปฏิเสธได้ที่หน้า ตรวจสลิป ในหลังบ้าน");
   return lines.join("\n");
 }

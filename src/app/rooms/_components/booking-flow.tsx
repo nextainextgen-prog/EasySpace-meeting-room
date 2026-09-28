@@ -38,6 +38,11 @@ import {
   type PublicPackage,
 } from "@/lib/public-booking/shared";
 import { refreshPublicBusy } from "@/lib/actions/public-booking";
+import {
+  amountDueNow,
+  paymentModeLabel,
+  type PublicPaymentInfo,
+} from "@/lib/public-booking/payment";
 import { amenityIcon } from "./chrome";
 import { DetailsSheet } from "./details-sheet";
 import { SuccessView, type BookingSuccess } from "./success-view";
@@ -90,6 +95,7 @@ export function BookingFlow({
   otherRooms,
   channel,
   serverNow,
+  payment,
 }: {
   room: FlowRoom;
   packages: PublicPackage[];
@@ -98,6 +104,7 @@ export function BookingFlow({
   otherRooms: OtherRoomCard[];
   channel: PublicChannel;
   serverNow: string;
+  payment: PublicPaymentInfo;
 }) {
   const [now, setNow] = useState(() => new Date(serverNow));
   const [busy, setBusy] = useState(initialBusy);
@@ -223,6 +230,7 @@ export function BookingFlow({
         room={room}
         config={config}
         channel={channel}
+        payment={payment}
         onDone={() => {
           setSuccess(null);
           setStart(null);
@@ -258,7 +266,7 @@ export function BookingFlow({
                 <ContactCard config={config} />
               )}
             </div>
-            <RoomDetails room={room} packages={packages} config={config} />
+            <RoomDetails room={room} packages={packages} config={config} payment={payment} />
             {otherRooms.length > 0 && (
               <OtherRooms rooms={otherRooms} channel={channel} now={now} />
             )}
@@ -278,6 +286,7 @@ export function BookingFlow({
                     selection={selection}
                     duration={duration}
                     quote={quote}
+                    payment={payment}
                     onContinue={() => setSheetOpen(true)}
                   />
                 </>
@@ -336,6 +345,7 @@ export function BookingFlow({
           duration={duration}
           quote={quote}
           channel={channel}
+          payment={payment}
           onClose={() => setSheetOpen(false)}
           onSlotTaken={async (message) => {
             setSheetOpen(false);
@@ -739,6 +749,7 @@ function SummaryCard({
   selection,
   duration,
   quote,
+  payment,
   onContinue,
 }: {
   room: FlowRoom;
@@ -746,6 +757,7 @@ function SummaryCard({
   selection: { start: string; end: string } | null;
   duration: number;
   quote: ReturnType<typeof quotePublic>;
+  payment: PublicPaymentInfo;
   onContinue: () => void;
 }) {
   return (
@@ -758,7 +770,7 @@ function SummaryCard({
               {thaiDateShort(date)} · {selection.start}–{selection.end} น.
             </span>
           </div>
-          <PriceLines room={room} duration={duration} quote={quote} />
+          <PriceLines room={room} duration={duration} quote={quote} payment={payment} />
         </>
       ) : (
         <p className="text-[13px] text-ink-3">เลือกวันและเวลาเพื่อดูราคา</p>
@@ -772,7 +784,10 @@ function SummaryCard({
         จองห้องนี้ <ChevronRight size={16} strokeWidth={2} />
       </button>
       <p className="mt-3 flex items-center justify-center gap-1.5 text-[11.5px] text-ink-3">
-        <ShieldCheck size={14} strokeWidth={1.75} /> ยังไม่ต้องชำระเงิน · ทีมงานยืนยันก่อนทุกครั้ง
+        <ShieldCheck size={14} strokeWidth={1.75} />
+        {payment.ready
+          ? `${paymentModeLabel(payment.mode, payment.depositPercent)}ออนไลน์ · ยืนยันการจองทันทีเมื่อสลิปผ่าน`
+          : "ยังไม่ต้องชำระเงิน · ทีมงานยืนยันก่อนทุกครั้ง"}
       </p>
     </section>
   );
@@ -782,11 +797,15 @@ export function PriceLines({
   room,
   duration,
   quote,
+  payment,
 }: {
   room: { hourly_rate: number };
   duration: number;
   quote: ReturnType<typeof quotePublic>;
+  payment?: PublicPaymentInfo;
 }) {
+  const dueNow =
+    payment?.ready ? amountDueNow(quote.total, payment.mode, payment.depositPercent) : 0;
   return (
     <div className="mt-3 space-y-2 text-[13.5px]">
       <div className="flex justify-between text-ink-2 tabular-nums">
@@ -809,6 +828,14 @@ export function PriceLines({
           ฿{formatBahtPlain(quote.total)}
         </span>
       </div>
+      {dueNow > 0 && payment && (
+        <div className="flex items-baseline justify-between rounded-[12px] bg-primary-50 px-3 py-2 text-primary-700">
+          <span className="font-semibold tracking-tight">
+            ชำระตอนนี้ ({paymentModeLabel(payment.mode, payment.depositPercent)})
+          </span>
+          <span className="text-[16px] font-bold tabular-nums">฿{formatBahtPlain(dueNow)}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -819,10 +846,12 @@ function RoomDetails({
   room,
   packages,
   config,
+  payment,
 }: {
   room: FlowRoom;
   packages: PublicPackage[];
   config: FlowConfig;
+  payment: PublicPaymentInfo;
 }) {
   const visiblePackages = packages.filter(
     (p) => p.price < Math.round(p.hours * room.hourly_rate),
@@ -886,11 +915,21 @@ function RoomDetails({
       <div className="rounded-card-lg border border-slate-900/[0.07] bg-white p-5 sm:col-span-2">
         <h3 className="text-[15px] font-bold tracking-tight">ขั้นตอนการจอง</h3>
         <ol className="mt-3 grid gap-3 sm:grid-cols-3">
-          {[
-            ["เลือกเวลาและกรอกข้อมูล", "ห้องจะถูกกันไว้ให้คุณทันทีหลังกดยืนยัน"],
-            ["ทีมงานโทรยืนยัน", "แจ้งรายละเอียดและช่องทางชำระเงิน"],
-            ["เข้าใช้ห้องได้เลย", "มาถึงก่อนเวลาเล็กน้อยเพื่อเตรียมตัว"],
-          ].map(([title, sub], i) => (
+          {(payment.ready
+            ? [
+                ["เลือกเวลาและกรอกข้อมูล", "ห้องจะถูกกันไว้ให้คุณทันทีหลังกดยืนยัน"],
+                [
+                  `โอน${paymentModeLabel(payment.mode, payment.depositPercent)}และแนบสลิป`,
+                  "ระบบตรวจสลิปกับธนาคารและยืนยันการจองให้ทันที",
+                ],
+                ["เข้าใช้ห้องได้เลย", "รับใบยืนยันทาง LINE · มาถึงก่อนเวลาเล็กน้อย"],
+              ]
+            : [
+                ["เลือกเวลาและกรอกข้อมูล", "ห้องจะถูกกันไว้ให้คุณทันทีหลังกดยืนยัน"],
+                ["ทีมงานโทรยืนยัน", "แจ้งรายละเอียดและช่องทางชำระเงิน"],
+                ["เข้าใช้ห้องได้เลย", "มาถึงก่อนเวลาเล็กน้อยเพื่อเตรียมตัว"],
+              ]
+          ).map(([title, sub], i) => (
             <li key={title} className="flex gap-3">
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink-1 text-[12px] font-bold text-white">
                 {i + 1}

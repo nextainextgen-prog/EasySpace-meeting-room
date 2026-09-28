@@ -38,9 +38,17 @@ import {
   queueOverrideTemplate,
   queueRestoredTemplate,
   bookingCancelledTemplate,
+  holdExpiredTemplate,
   type DisplacedSummary,
 } from "@/lib/templates/telegram";
 import { computeHoldExpiry, DEFAULT_HOLD_EXPIRY_DAYS } from "@/lib/booking-hold";
+import { getPaymentSetup, outstandingOnline } from "@/lib/server/payment-slips";
+import { amountDueNow } from "@/lib/public-booking/payment";
+import {
+  linkLineToBooking,
+  sendBookingLine,
+  type PublicLineLink,
+} from "@/lib/server/booking-line";
 import { fromBkk, bkkDateLabel, bkkTime } from "@/lib/time/bkk";
 import {
   CHANNEL_LABEL,
@@ -83,6 +91,9 @@ export interface PublicMeta {
   phone: string;
   company: string | null;
   displaced: DisplacedRecord[];
+  /** Online payment terms fixed at booking time. */
+  payment?: { mode: "deposit" | "full"; percent: number; due: number };
+  line?: PublicLineLink;
 }
 
 interface OverlapRow {
@@ -361,6 +372,69 @@ export async function restoreDisplacedFor(bookingId: string): Promise<number> {
   return restored.length;
 }
 
+// ─── Lapsed online holds ──────────────────────────────────────────────────
+
+/**
+ * Release unpaid online bookings whose payment window has closed. The hold
+ * cron only runs nightly, and an online hold lasts minutes, so anything that
+ * reads or books a room sweeps it first.
+ */
+export async function expireLapsedHolds(roomId?: string): Promise<number> {
+  const admin = createSupabaseAdminClient();
+  let q = admin
+    .from("bookings")
+    .select("id, reference_code, starts_at, ends_at, room:rooms(name), customer:customers(display_name)")
+    .eq("booking_status", "pending")
+    .not("metadata->public", "is", null)
+    .lte("hold_expires_at", new Date().toISOString());
+  if (roomId) q = q.eq("room_id", roomId);
+  const { data } = await q;
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    reference_code: string;
+    starts_at: string;
+    ends_at: string;
+    room: { name: string } | null;
+    customer: { display_name: string } | null;
+  }>;
+  let n = 0;
+  for (const r of rows) {
+    const { data: done } = await admin
+      .from("bookings")
+      .update({
+        booking_status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+        cancelled_reason: "ไม่ได้ชำระเงินภายในเวลาที่กำหนด — ปล่อยห้องคืนอัตโนมัติ",
+        hold_expires_at: null,
+      } as never)
+      .eq("id", r.id)
+      .eq("booking_status", "pending")
+      .select("id")
+      .maybeSingle();
+    if (!done) continue;
+    n++;
+    await admin.from("booking_audit_log").insert({
+      booking_id: r.id,
+      action: "hold_expired",
+      actor_name: "ระบบ (จองออนไลน์)",
+      reason: "ไม่ได้ชำระเงินภายในเวลาที่กำหนด",
+    } as never);
+    await restoreDisplacedFor(r.id);
+    void sendBookingLine(r.id, "cancelled");
+    void dispatchEvent(
+      "booking.hold_expired",
+      holdExpiredTemplate({
+        reference: r.reference_code,
+        customerName: r.customer?.display_name ?? "-",
+        roomName: r.room?.name ?? "-",
+        startsAt: r.starts_at,
+        endsAt: r.ends_at,
+      }),
+    );
+  }
+  return n;
+}
+
 // ─── Create ───────────────────────────────────────────────────────────────
 
 export interface PublicBookingInput {
@@ -376,6 +450,8 @@ export interface PublicBookingInput {
   note?: string | null;
   channel: PublicChannel;
   ip: string | null;
+  /** LIFF access token when the customer booked from inside LINE. */
+  lineAccessToken?: string | null;
 }
 
 export type PublicBookingResult =
@@ -389,6 +465,10 @@ export type PublicBookingResult =
       totalAmount: number;
       packageName: string | null;
       holdExpiresAt: string;
+      /** Amount to transfer now; 0 when online payment is off. */
+      amountDue: number;
+      paymentMode: "deposit" | "full" | null;
+      lineLinked: boolean;
     }
   | {
       ok: false;
@@ -533,6 +613,9 @@ export async function createPublicBooking(
   }
 
   // ── Conflicts ──
+  // Unpaid online holds past their deadline are free already; release them
+  // now rather than waiting for the nightly sweep.
+  await expireLapsedHolds(room.id);
   const overlaps = await findOverlaps(room.id, startsAt, endsAt);
   const externalHit = overlaps.some((o) => o.source === "external");
   const internalHits = overlaps.filter((o) => o.source === "internal");
@@ -574,7 +657,16 @@ export async function createPublicBooking(
   // ── Price ──
   const packages = (await listPublicPackages([room.id])).get(room.id) ?? [];
   const quote = quotePublic(Number(room.hourly_rate), packages, input.durationMinutes);
-  const holdExpiresAt = computeHoldExpiry(startsAt, await resolveHoldDays());
+  const payment = await getPaymentSetup(cfg);
+  const amountDue = payment.ready ? amountDueNow(quote.total, payment.mode, payment.depositPercent) : 0;
+  // With online payment the room is held only long enough to pay for it;
+  // otherwise the team has the usual ติดจอง grace period to confirm by phone.
+  const holdExpiresAt =
+    amountDue > 0
+      ? new Date(
+          Math.min(now.getTime() + payment.holdMinutes * 60_000, new Date(startsAt).getTime()),
+        ).toISOString()
+      : computeHoldExpiry(startsAt, await resolveHoldDays());
   const token = randomBytes(18).toString("base64url");
 
   const meta: PublicMeta = {
@@ -584,6 +676,9 @@ export async function createPublicBooking(
     phone: input.phone,
     company: input.company ?? null,
     displaced,
+    ...(amountDue > 0
+      ? { payment: { mode: payment.mode, percent: payment.depositPercent, due: amountDue } }
+      : {}),
   };
 
   const noteParts = [
@@ -677,7 +772,15 @@ export async function createPublicBooking(
     packageName: quote.packageName,
     holdExpiresAt,
     displaced,
+    amountDue,
   });
+
+  // Booked from inside LINE: tie the booking to them and send the card.
+  let lineLinked = false;
+  if (input.lineAccessToken) {
+    const linked = await linkLineToBooking(bookingId, input.lineAccessToken);
+    lineLinked = linked.ok;
+  }
 
   return {
     ok: true,
@@ -689,6 +792,9 @@ export async function createPublicBooking(
     totalAmount: quote.total,
     packageName: quote.packageName,
     holdExpiresAt,
+    amountDue,
+    paymentMode: amountDue > 0 ? payment.mode : null,
+    lineLinked,
   };
 }
 
@@ -742,6 +848,7 @@ async function notifyPublicBooking(opts: {
   packageName: string | null;
   holdExpiresAt: string;
   displaced: DisplacedRecord[];
+  amountDue: number;
 }) {
   const { input, displaced } = opts;
   const phone = formatPhone(input.phone);
@@ -767,6 +874,7 @@ async function notifyPublicBooking(opts: {
       expiresAt: opts.holdExpiresAt,
       note: input.note,
       displacedCount: displaced.length,
+      amountDue: opts.amountDue,
     }),
   );
 
@@ -866,6 +974,12 @@ export interface PublicBookingView {
   holdExpiresAt: string | null;
   cancelledReason: string | null;
   canCancel: boolean;
+  paidAmount: number;
+  /** Still to transfer online right now (0 = nothing due / payment off). */
+  dueNow: number;
+  paymentMode: "deposit" | "full" | null;
+  company: string | null;
+  lineLinked: boolean;
 }
 
 async function loadByToken(reference: string, token: string) {
@@ -875,7 +989,7 @@ async function loadByToken(reference: string, token: string) {
     .from("bookings")
     .select(
       `id, reference_code, booking_status, payment_status, starts_at, ends_at,
-       attendees_count, total_amount, hold_expires_at, cancelled_reason, metadata,
+       attendees_count, total_amount, paid_amount, hold_expires_at, cancelled_reason, metadata,
        room:rooms(id, name, thumbnail_url, color), customer:customers(display_name)`,
     )
     .eq("reference_code", reference)
@@ -889,6 +1003,7 @@ async function loadByToken(reference: string, token: string) {
     ends_at: string;
     attendees_count: number | null;
     total_amount: number;
+    paid_amount: number;
     hold_expires_at: string | null;
     cancelled_reason: string | null;
     metadata: { public?: PublicMeta } | null;
@@ -906,8 +1021,17 @@ export async function getPublicBookingView(
   reference: string,
   token: string,
 ): Promise<PublicBookingView | null> {
-  const row = await loadByToken(reference, token);
+  let row = await loadByToken(reference, token);
   if (!row) return null;
+  // Opening the page after the payment window closed shows the truth.
+  if (
+    row.booking_status === "pending" &&
+    row.hold_expires_at &&
+    new Date(row.hold_expires_at).getTime() <= Date.now() &&
+    (await expireLapsedHolds(undefined)) > 0
+  ) {
+    row = (await loadByToken(reference, token)) ?? row;
+  }
   const cfg = await getPublicRoomConfig();
   let slug: string | null = null;
   for (const [s, id] of Object.entries(cfg.slug_map)) {
@@ -936,7 +1060,20 @@ export async function getPublicBookingView(
     canCancel:
       row.booking_status === "pending" &&
       new Date(row.starts_at).getTime() > Date.now(),
+    paidAmount: Number(row.paid_amount),
+    dueNow:
+      ["pending", "confirmed"].includes(row.booking_status) && new Date(row.ends_at).getTime() > Date.now()
+        ? outstandingOnline(row)
+        : 0,
+    paymentMode: row.metadata?.public?.payment?.mode ?? null,
+    company: row.metadata?.public?.company ?? null,
+    lineLinked: Boolean(row.metadata?.public?.line?.userId),
   };
+}
+
+/** Booking id for a (reference, token) pair — for LINE linking and slips. */
+export async function bookingIdByToken(reference: string, token: string): Promise<string | null> {
+  return (await loadByToken(reference, token))?.id ?? null;
 }
 
 export async function cancelPublicBookingByToken(
@@ -983,5 +1120,6 @@ export async function cancelPublicBookingByToken(
     }),
   );
   await restoreDisplacedFor(row.id);
+  void sendBookingLine(row.id, "cancelled");
   return { ok: true };
 }

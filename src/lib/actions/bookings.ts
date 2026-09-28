@@ -10,6 +10,7 @@ import {
 } from "@/lib/data";
 import { dispatchEvent } from "@/lib/server/notifications";
 import { restoreDisplacedFor } from "@/lib/server/public-booking";
+import { sendBookingLine } from "@/lib/server/booking-line";
 import { recordAudit } from "./audit";
 import {
   bookingCreatedTemplate,
@@ -903,6 +904,7 @@ export async function cancelBooking(input: {
     reason: input.reason,
   });
   await restoreDisplacedFor(input.bookingId);
+  void sendBookingLine(input.bookingId, "cancelled");
 
   revalidatePath("/admin/calendar");
   revalidatePath("/admin/bookings");

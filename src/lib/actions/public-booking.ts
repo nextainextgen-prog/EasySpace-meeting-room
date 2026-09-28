@@ -8,7 +8,9 @@ import {
   getPublicRoomConfig,
   listPublicBusy,
 } from "@/lib/data/public-rooms";
+import { linkLineToBooking } from "@/lib/server/booking-line";
 import {
+  bookingIdByToken,
   cancelPublicBookingByToken,
   createPublicBooking,
   type PublicBookingResult,
@@ -42,6 +44,8 @@ const SubmitSchema = z.object({
   attendees: z.number().int().min(1).max(500).optional(),
   note: z.string().trim().max(500).optional(),
   channel: z.string().optional(),
+  /** LIFF access token — verified server-side, never trusted as-is. */
+  lineAccessToken: z.string().max(2000).optional(),
   /** Honeypot — real people never see this field. */
   website: z.string().optional(),
 });
@@ -96,8 +100,9 @@ export async function submitPublicBooking(
     company: input.company || null,
     attendees: input.attendees ?? null,
     note: input.note || null,
-    channel: parseChannel(input.channel),
+    channel: input.lineAccessToken ? "line" : parseChannel(input.channel),
     ip: await clientIp(),
+    lineAccessToken: input.lineAccessToken || null,
   });
 
   if (result.ok) {
@@ -130,4 +135,14 @@ export async function cancelPublicBooking(reference: string, token: string) {
     revalidatePath("/admin/bookings");
   }
   return result;
+}
+
+/** Tie a booking to the LINE account the customer opened it with (LIFF). */
+export async function linkLineAccount(reference: string, token: string, accessToken: string) {
+  const id = await bookingIdByToken(String(reference ?? "").slice(0, 32), String(token ?? "").slice(0, 64));
+  if (!id) return { ok: false as const, message: "ไม่พบการจอง" };
+  const r = await linkLineToBooking(id, String(accessToken ?? "").slice(0, 2000));
+  return r.ok
+    ? { ok: true as const, pushed: Boolean(r.pushed), message: r.message }
+    : { ok: false as const, message: r.message ?? "เชื่อม LINE ไม่สำเร็จ" };
 }

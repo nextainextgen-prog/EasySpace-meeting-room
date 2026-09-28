@@ -24,6 +24,9 @@ import type { PublicBookingView } from "@/lib/server/public-booking";
 import { cancelPublicBooking } from "@/lib/actions/public-booking";
 import { downloadIcs } from "../../_components/ics";
 import { forgetBooking } from "../../_components/my-bookings";
+import { PaymentPanel } from "../../_components/payment-panel";
+import { LineLink } from "../../_components/line-link";
+import type { PublicPaymentInfo } from "@/lib/public-booking/payment";
 
 const STATUS: Record<
   string,
@@ -50,17 +53,22 @@ export function BookingStatus({
   token,
   channel,
   config,
+  payment,
 }: {
   view: PublicBookingView;
   token: string;
   channel: PublicChannel;
+  payment: PublicPaymentInfo;
   config: { line_url: string; line_id: string; phone: string; confirm_message: string };
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const st = STATUS[view.status] ?? STATUS.pending;
+  const awaitingPayment = view.dueNow > 0 && view.status === "pending";
+  const st = awaitingPayment
+    ? { label: "รอชำระเงิน", tone: "amber" as const, sub: "ห้องถูกกันไว้ให้คุณแล้ว ชำระเงินและแนบสลิปเพื่อยืนยันการจอง" }
+    : (STATUS[view.status] ?? STATUS.pending);
   const minutes = Math.round(
     (new Date(view.endsAt).getTime() - new Date(view.startsAt).getTime()) / 60_000,
   );
@@ -69,7 +77,10 @@ export function BookingStatus({
 
   const steps = [
     { title: "ส่งคำขอจอง", done: true },
-    { title: "ทีมงานยืนยัน", done: ["confirmed", "in_use", "completed"].includes(view.status) },
+    {
+      title: view.paymentMode ? "ชำระเงิน" : "ทีมงานยืนยัน",
+      done: ["confirmed", "in_use", "completed"].includes(view.status),
+    },
     {
       title: "เข้าใช้ห้อง",
       done: ["in_use", "completed"].includes(view.status),
@@ -144,6 +155,27 @@ export function BookingStatus({
         </div>
       )}
 
+      {view.dueNow > 0 && payment.ready && (
+        <div className="mt-6">
+          <PaymentPanel
+            reference={view.reference}
+            token={token}
+            dueNow={view.dueNow}
+            totalAmount={view.totalAmount}
+            deadline={view.status === "pending" ? view.holdExpiresAt : null}
+            mode={view.paymentMode}
+            payment={payment}
+            onPaid={() => router.refresh()}
+          />
+        </div>
+      )}
+
+      {!["cancelled", "no_show", "completed"].includes(view.status) && (
+        <div className="mt-4">
+          <LineLink reference={view.reference} token={token} linked={view.lineLinked} />
+        </div>
+      )}
+
       {/* Card */}
       <div className="mt-6 overflow-hidden rounded-[28px] bg-white ring-1 ring-slate-900/[0.06] shadow-[0_24px_48px_-28px_rgba(15,23,42,0.25)]">
         <div className="relative h-28" style={{ background: view.roomColor }}>
@@ -162,9 +194,10 @@ export function BookingStatus({
             {bkkTime(view.startsAt)} – {bkkTime(view.endsAt)} น.
           </Row>
           <Row label="ระยะเวลา">{durationLabel(minutes)}</Row>
-          <Row label="ผู้จอง">{view.customerName}</Row>
+          <Row label="ผู้จอง">{view.company || view.customerName}</Row>
           <Row label="ผู้เข้าร่วม">{view.attendees ? `${view.attendees} ท่าน` : "-"}</Row>
           <Row label="ราคารวม">฿{formatBahtPlain(view.totalAmount)}</Row>
+          {view.paidAmount > 0 && <Row label="ชำระแล้ว">฿{formatBahtPlain(view.paidAmount)}</Row>}
           <Row label="การชำระเงิน">
             {view.paymentStatus === "paid"
               ? "ชำระแล้ว"
@@ -175,7 +208,7 @@ export function BookingStatus({
                   : "รอแจ้งช่องทางชำระ"}
           </Row>
         </dl>
-        {view.status === "pending" && view.holdExpiresAt && (
+        {view.status === "pending" && view.holdExpiresAt && !awaitingPayment && (
           <p className="border-t border-slate-900/[0.06] bg-amber-50/50 px-5 py-3 text-[12.5px] text-amber-800">
             กันห้องไว้ให้ถึง {bkkDateLabel(view.holdExpiresAt)} {bkkTime(view.holdExpiresAt)} น. — {config.confirm_message}
           </p>

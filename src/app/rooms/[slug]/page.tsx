@@ -8,6 +8,7 @@ import {
   slugForRoom,
 } from "@/lib/data/public-rooms";
 import { parseChannel } from "@/lib/public-booking/shared";
+import { getPublicPaymentInfo } from "@/lib/server/payment-slips";
 import { LiveBadge, PublicFooter, PublicTopBar } from "../_components/chrome";
 import { MyBookingsStrip } from "../_components/my-bookings";
 import { BookingFlow } from "../_components/booking-flow";
@@ -34,7 +35,7 @@ export default async function PublicRoomPage({ params, searchParams }: PageProps
   const channel = parseChannel(src);
 
   const others = (await listPublicRooms()).filter((r) => r.id !== room.id);
-  const [busyMap, packages] = await Promise.all([
+  const [busyMap, packages, payment] = await Promise.all([
     listPublicBusy({
       roomIds: [room.id, ...others.map((r) => r.id)],
       fromDate: bkkToday(),
@@ -42,6 +43,7 @@ export default async function PublicRoomPage({ params, searchParams }: PageProps
       includeInternal: !config.allow_override_internal,
     }),
     listPublicPackages([room.id]),
+    getPublicPaymentInfo(),
   ]);
 
   return (
@@ -93,6 +95,7 @@ export default async function PublicRoomPage({ params, searchParams }: PageProps
         }))}
         channel={channel}
         serverNow={new Date().toISOString()}
+        payment={payment}
       />
       <PublicFooter lineUrl={config.line_url} lineId={config.line_id} phone={config.phone} />
       {/* Room for the mobile sticky CTA so it never covers the footer. */}

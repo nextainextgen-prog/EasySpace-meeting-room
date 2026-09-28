@@ -22,6 +22,12 @@ import {
 import { submitPublicBooking } from "@/lib/actions/public-booking";
 import { PriceLines, type FlowRoom } from "./booking-flow";
 import type { BookingSuccess } from "./success-view";
+import { useLiff } from "./liff";
+import {
+  amountDueNow,
+  paymentModeLabel,
+  type PublicPaymentInfo,
+} from "@/lib/public-booking/payment";
 
 const CONTACT_KEY = "easyspace.public.contact.v1";
 
@@ -56,6 +62,7 @@ export function DetailsSheet({
   duration,
   quote,
   channel,
+  payment,
   onClose,
   onSlotTaken,
   onSuccess,
@@ -66,6 +73,7 @@ export function DetailsSheet({
   duration: number;
   quote: ReturnType<typeof quotePublic>;
   channel: PublicChannel;
+  payment: PublicPaymentInfo;
   onClose: () => void;
   onSlotTaken: (message: string) => void;
   onSuccess: (s: BookingSuccess) => void;
@@ -79,6 +87,8 @@ export function DetailsSheet({
   const [error, setError] = useState<{ message: string; field?: string } | null>(null);
   const [pending, startTransition] = useTransition();
   const firstField = useRef<HTMLInputElement>(null);
+  const liff = useLiff();
+  const dueNow = payment.ready ? amountDueNow(quote.total, payment.mode, payment.depositPercent) : 0;
 
   useEffect(() => {
     const saved = readContact();
@@ -129,6 +139,7 @@ export function DetailsSheet({
           note,
           channel,
           website: honeypot,
+          lineAccessToken: liff.accessToken ?? undefined,
         });
         if (r.ok) {
           writeContact(contact);
@@ -142,6 +153,9 @@ export function DetailsSheet({
             holdExpiresAt: r.holdExpiresAt,
             attendees,
             customerName: contact.name,
+            amountDue: r.amountDue,
+            paymentMode: r.paymentMode,
+            lineLinked: r.lineLinked,
           });
           return;
         }
@@ -321,7 +335,7 @@ export function DetailsSheet({
 
           <div className="mt-5 rounded-[20px] border border-slate-900/[0.07] p-4">
             <p className="text-[13px] font-semibold tracking-tight">สรุปค่าบริการ</p>
-            <PriceLines room={room} duration={duration} quote={quote} />
+            <PriceLines room={room} duration={duration} quote={quote} payment={payment} />
           </div>
 
           {error && (
@@ -347,12 +361,18 @@ export function DetailsSheet({
                 <Loader2 size={18} className="animate-spin" /> กำลังจองห้อง...
               </>
             ) : (
-              <>ยืนยันการจอง · ฿{formatBahtPlain(quote.total)}</>
+              <>
+                {dueNow > 0
+                  ? `ยืนยันและชำระเงิน · ฿${formatBahtPlain(dueNow)}`
+                  : `ยืนยันการจอง · ฿${formatBahtPlain(quote.total)}`}
+              </>
             )}
           </button>
           <p className="mt-2.5 flex items-center justify-center gap-1.5 text-[11.5px] text-ink-3">
             <ShieldCheck size={14} strokeWidth={1.75} />
-            ยังไม่มีการเก็บเงิน · ข้อมูลใช้เพื่อยืนยันการจองเท่านั้น
+            {dueNow > 0
+              ? `ขั้นตอนถัดไป: โอน${paymentModeLabel(payment.mode, payment.depositPercent)}และแนบสลิป`
+              : "ยังไม่มีการเก็บเงิน · ข้อมูลใช้เพื่อยืนยันการจองเท่านั้น"}
           </p>
         </div>
       </form>

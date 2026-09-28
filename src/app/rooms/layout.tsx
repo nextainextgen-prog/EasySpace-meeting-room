@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { getPublicRoomConfig } from "@/lib/data/public-rooms";
+import { LiffProvider } from "./_components/liff";
 
 export const metadata: Metadata = {
   title: "จองห้องประชุม — EasySpace",
@@ -12,10 +14,15 @@ export const viewport: Viewport = {
   themeColor: "#FFFFFF",
 };
 
-export default function RoomsLayout({
+export default async function RoomsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <div className="min-h-dvh bg-[#F6F7FB] text-ink-1">{children}</div>;
+  const { liff_id } = await getPublicRoomConfig();
+  return (
+    <div className="min-h-dvh bg-[#F6F7FB] text-ink-1">
+      <LiffProvider liffId={liff_id}>{children}</LiffProvider>
+    </div>
+  );
 }

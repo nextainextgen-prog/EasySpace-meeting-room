@@ -1,4 +1,5 @@
 import {
+  ReceiptText,
   LayoutDashboard,
   Calendar,
   CalendarPlus,
@@ -48,6 +49,7 @@ export const navIcons = {
   buildings: Building2,
   audit: History,
   account: UserCircle,
+  slips: ReceiptText,
 } as const satisfies Record<string, LucideIcon>;
 
 export function paymentStatusIcon(status: PaymentStatus): LucideIcon {

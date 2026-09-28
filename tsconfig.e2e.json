@@ -14,6 +14,12 @@
       "next/cache": [
         "./scripts/e2e/stub-next-cache.ts"
       ],
+      "@/lib/integrations/easyslip": [
+        "./scripts/e2e/stub-easyslip.ts"
+      ],
+      "@/lib/integrations/line-messaging": [
+        "./scripts/e2e/stub-line.ts"
+      ],
       "@/*": [
         "./src/*"
       ]

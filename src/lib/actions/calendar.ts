@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { dispatchEvent } from "@/lib/server/notifications";
 import { restoreDisplacedFor } from "@/lib/server/public-booking";
+import { sendBookingLine } from "@/lib/server/booking-line";
 import { getCurrentProfile, requireRole } from "@/lib/auth";
 import { listBookingsForRange } from "@/lib/data/bookings";
 import {
@@ -496,6 +497,10 @@ export async function setBookingStatus(
   // hand the internal meeting its slot back.
   if (input.status === "cancelled" || input.status === "no_show") {
     await restoreDisplacedFor(input.bookingId);
+  }
+  // Online customers who linked LINE hear about it (no-op for everyone else).
+  if (input.status === "confirmed" || input.status === "cancelled") {
+    void sendBookingLine(input.bookingId, input.status === "confirmed" ? "confirmed" : "cancelled");
   }
 
   revalidatePath("/admin/calendar");

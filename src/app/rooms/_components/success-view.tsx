@@ -9,6 +9,7 @@ import {
   Copy,
   MessageCircle,
   Phone,
+  Timer,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { bkkDate, bkkDateLabel, bkkTime } from "@/lib/time/bkk";
@@ -20,6 +21,13 @@ import {
 } from "@/lib/public-booking/shared";
 import { downloadIcs } from "./ics";
 import { saveBooking } from "./my-bookings";
+import { PaymentPanel, type SlipOutcome } from "./payment-panel";
+import { LineLink } from "./line-link";
+import {
+  PAYMENT_STATUS_LABEL,
+  type PaymentMode,
+  type PublicPaymentInfo,
+} from "@/lib/public-booking/payment";
 
 export interface BookingSuccess {
   reference: string;
@@ -31,6 +39,9 @@ export interface BookingSuccess {
   holdExpiresAt: string;
   attendees: number;
   customerName: string;
+  amountDue: number;
+  paymentMode: PaymentMode | null;
+  lineLinked: boolean;
 }
 
 export function SuccessView({
@@ -38,15 +49,19 @@ export function SuccessView({
   room,
   config,
   channel,
+  payment,
   onDone,
 }: {
   success: BookingSuccess;
   room: { name: string; color: string; thumbnail_url: string | null };
   config: { line_url: string; line_id: string; phone: string; confirm_message: string };
   channel: PublicChannel;
+  payment: PublicPaymentInfo;
   onDone: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [paid, setPaid] = useState<SlipOutcome | null>(null);
+  const awaitingPayment = success.amountDue > 0 && !paid;
   const statusHref = `/rooms/booking/${success.reference}?t=${success.token}&src=${channel}`;
   const minutes = Math.round(
     (new Date(success.endsAt).getTime() - new Date(success.startsAt).getTime()) / 60_000,
@@ -72,14 +87,47 @@ export function SuccessView({
   return (
     <div className="mx-auto max-w-lg px-4 pb-16 pt-8 sm:pt-12">
       <div className="text-center">
-        <div className="es-pop mx-auto grid h-[72px] w-[72px] place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-[0_14px_30px_-10px_rgba(16,185,129,0.65)] ring-8 ring-emerald-500/10">
-          <Check size={34} strokeWidth={2.5} />
-        </div>
-        <h1 className="es-rise mt-5 text-[26px] font-bold tracking-tightest">จองห้องเรียบร้อย</h1>
+        {awaitingPayment ? (
+          <div className="es-pop mx-auto grid h-[72px] w-[72px] place-items-center rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-white shadow-[0_14px_30px_-10px_rgba(245,158,11,0.6)] ring-8 ring-amber-500/10">
+            <Timer size={32} strokeWidth={2.25} />
+          </div>
+        ) : (
+          <div className="es-pop mx-auto grid h-[72px] w-[72px] place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-[0_14px_30px_-10px_rgba(16,185,129,0.65)] ring-8 ring-emerald-500/10">
+            <Check size={34} strokeWidth={2.5} />
+          </div>
+        )}
+        <h1 className="es-rise mt-5 text-[26px] font-bold tracking-tightest">
+          {awaitingPayment ? "กันห้องไว้ให้คุณแล้ว" : paid ? "การจองสำเร็จ" : "จองห้องเรียบร้อย"}
+        </h1>
         <p className="es-rise mx-auto mt-1.5 max-w-sm text-[14px] leading-relaxed text-ink-2">
-          เรากันห้องไว้ให้คุณ{success.customerName ? `แล้ว คุณ${success.customerName.split(" ")[0]}` : "แล้ว"} ·
-          ทีมงานจะติดต่อกลับเพื่อยืนยัน
+          {awaitingPayment
+            ? "ชำระเงินและแนบสลิปภายในเวลาที่กำหนด ระบบจะยืนยันการจองให้ทันที"
+            : paid
+              ? `ได้รับชำระ ฿${formatBahtPlain(paid.amount)} แล้ว ห้องพร้อมสำหรับคุณตามเวลานัด`
+              : "เรากันห้องไว้ให้คุณแล้ว · ทีมงานจะติดต่อกลับเพื่อยืนยัน"}
         </p>
+      </div>
+
+      {awaitingPayment && (
+        <div className="es-rise mt-7">
+          <PaymentPanel
+            reference={success.reference}
+            token={success.token}
+            dueNow={success.amountDue}
+            totalAmount={success.totalAmount}
+            deadline={success.holdExpiresAt}
+            mode={success.paymentMode}
+            payment={payment}
+            onPaid={(o) => {
+              setPaid(o);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+          />
+        </div>
+      )}
+
+      <div className="es-rise mt-4">
+        <LineLink reference={success.reference} token={success.token} linked={success.lineLinked} />
       </div>
 
       {/* Ticket */}
@@ -138,28 +186,44 @@ export function SuccessView({
               </span>
             </button>
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded-pill bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-700 ring-1 ring-amber-200">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-            รอยืนยัน
-          </span>
+          {paid ? (
+            <span className="inline-flex items-center gap-1.5 rounded-pill bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              {PAYMENT_STATUS_LABEL[paid.paymentStatus] ?? "ยืนยันแล้ว"}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-pill bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-700 ring-1 ring-amber-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              {awaitingPayment ? "รอชำระเงิน" : "รอยืนยัน"}
+            </span>
+          )}
         </div>
       </div>
 
       {/* Progress */}
       <ol className="es-rise mt-6 space-y-0">
-        {[
-          { title: "ส่งคำขอจองแล้ว", sub: "ห้องถูกกันไว้ให้คุณเรียบร้อย", done: true },
-          {
-            title: "ทีมงานยืนยันการจอง",
-            sub: `${config.confirm_message}`,
-            done: false,
-          },
-          {
-            title: "ชำระเงินและเข้าใช้ห้อง",
-            sub: `กันห้องไว้ถึง ${bkkDateLabel(success.holdExpiresAt)} ${bkkTime(success.holdExpiresAt)} น. หากยังไม่ยืนยัน`,
-            done: false,
-          },
-        ].map((s, i, arr) => (
+        {(success.amountDue > 0
+          ? [
+              { title: "จองห้องแล้ว", sub: "ห้องถูกกันไว้ให้คุณเรียบร้อย", done: true },
+              {
+                title: "ชำระเงินและตรวจสลิป",
+                sub: paid
+                  ? `ตรวจสลิปผ่าน · ${PAYMENT_STATUS_LABEL[paid.paymentStatus] ?? ""}`
+                  : `ชำระภายใน ${bkkTime(success.holdExpiresAt)} น. (${bkkDateLabel(success.holdExpiresAt)}) มิฉะนั้นห้องจะถูกปล่อยอัตโนมัติ`,
+                done: Boolean(paid),
+              },
+              { title: "เข้าใช้ห้องตามเวลานัด", sub: "มาถึงก่อนเวลาเล็กน้อยเพื่อเตรียมตัว", done: false },
+            ]
+          : [
+              { title: "ส่งคำขอจองแล้ว", sub: "ห้องถูกกันไว้ให้คุณเรียบร้อย", done: true },
+              { title: "ทีมงานยืนยันการจอง", sub: `${config.confirm_message}`, done: false },
+              {
+                title: "ชำระเงินและเข้าใช้ห้อง",
+                sub: `กันห้องไว้ถึง ${bkkDateLabel(success.holdExpiresAt)} ${bkkTime(success.holdExpiresAt)} น. หากยังไม่ยืนยัน`,
+                done: false,
+              },
+            ]
+        ).map((s, i, arr) => (
           <li key={s.title} className="relative flex gap-3.5 pb-5 last:pb-0">
             {i < arr.length - 1 && (
               <span className="absolute left-[13px] top-7 h-[calc(100%-20px)] w-px bg-slate-900/10" />
@@ -191,7 +255,7 @@ export function SuccessView({
               startsAt: success.startsAt,
               endsAt: success.endsAt,
               location: `${room.name} · EasySpace`,
-              description: `รหัสการจอง ${success.reference}\nสถานะ: รอทีมงานยืนยัน\nติดต่อ LINE ${config.line_id} / ${config.phone}`,
+              description: `รหัสการจอง ${success.reference}\nสถานะ: ${paid ? "ยืนยันแล้ว" : awaitingPayment ? "รอชำระเงิน" : "รอทีมงานยืนยัน"}\nติดต่อ LINE ${config.line_id} / ${config.phone}`,
             })
           }
           className="inline-flex h-12 items-center justify-center gap-1.5 rounded-pill border border-slate-900/[0.1] bg-white text-[14px] font-semibold tracking-tight hover:bg-slate-50"

@@ -94,6 +94,7 @@ export type TelegramEventKey =
   | "payment.deposit"
   | "payment.free"
   | "payment.refund"
+  | "payment.slip_review"
   | "outstanding.alert"
   | "finance.daily_brief"
   | "finance.weekly_summary"

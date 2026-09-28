@@ -1,13 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  ArrowRight,
-  BadgeCheck,
-  Building2,
-  Radio,
-  ShieldCheck,
-  Users,
-} from "lucide-react";
+import { ArrowRight, Building2, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
   bkkToday,
@@ -28,6 +21,7 @@ import {
   type PublicBusyBlock,
 } from "@/lib/public-booking/shared";
 import { LiveBadge, PublicFooter, PublicTopBar } from "./_components/chrome";
+import { getPublicPaymentInfo } from "@/lib/server/payment-slips";
 import { MyBookingsStrip } from "./_components/my-bookings";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +44,7 @@ export default async function PublicRoomsIndex({
   const config = await getPublicRoomConfig();
   if (!config.enabled) return notFound();
 
-  const rooms = await listPublicRooms();
+  const [rooms, payment] = await Promise.all([listPublicRooms(), getPublicPaymentInfo()]);
   const today = bkkToday();
   const busy = await listPublicBusy({
     roomIds: rooms.map((r) => r.id),
@@ -74,13 +68,17 @@ export default async function PublicRoomsIndex({
         </h1>
         <p className="mt-3 max-w-lg text-[14.5px] leading-relaxed text-ink-2">
           เช็กเวลาว่างแบบเรียลไทม์ เลือกห้องและเวลาที่ต้องการ แล้วกดจองได้ทันที
-          ทีมงานจะติดต่อยืนยันทุกการจอง
+          {payment.ready
+            ? " ชำระเงินและแนบสลิป ระบบยืนยันการจองให้อัตโนมัติ"
+            : " ทีมงานจะติดต่อยืนยันทุกการจอง"}
         </p>
-        <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-[12.5px] text-ink-2">
-          <Trust icon={Radio}>ห้องว่างจริง อัปเดตสด</Trust>
-          <Trust icon={ShieldCheck}>ยังไม่ต้องชำระตอนจอง</Trust>
-          <Trust icon={BadgeCheck}>ยืนยันโดยทีมงาน</Trust>
-        </div>
+        <p className="mt-4 text-[13px] font-medium text-ink-3">
+          {[
+            "ห้องว่างจริง อัปเดตสด",
+            payment.ready ? "ชำระออนไลน์ ตรวจสลิปอัตโนมัติ" : "ยังไม่ต้องชำระตอนจอง",
+            payment.ready ? "ยืนยันการจองทันที" : "ยืนยันโดยทีมงาน",
+          ].join("  ·  ")}
+        </p>
       </section>
 
       <MyBookingsStrip channel={channel} />
@@ -179,21 +177,6 @@ export default async function PublicRoomsIndex({
 
       <PublicFooter lineUrl={config.line_url} lineId={config.line_id} phone={config.phone} />
     </>
-  );
-}
-
-function Trust({
-  icon: Icon,
-  children,
-}: {
-  icon: typeof Users;
-  children: React.ReactNode;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <Icon size={16} strokeWidth={1.75} className="text-primary-600" />
-      {children}
-    </span>
   );
 }
 

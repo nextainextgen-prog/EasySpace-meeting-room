@@ -52,6 +52,13 @@ const sections: NavSection[] = [
         minRole: "accountant",
       },
       {
+        href: "/admin/finance/slips",
+        label: "ตรวจสลิป",
+        icon: "slips",
+        indent: true,
+        minRole: "accountant",
+      },
+      {
         href: "/admin/promotions",
         label: "โปรโมชั่น",
         icon: "promotions",
@@ -159,7 +166,9 @@ export function AdminSidebar({ profile }: { profile: SidebarProfile }) {
                       ? pathname === "/admin/customers" ||
                         (pathname?.startsWith("/admin/customers/") &&
                           !pathname?.startsWith("/admin/customers/analytics"))
-                      : pathname === item.href ||
+                      : item.href === "/admin/finance"
+                        ? pathname === "/admin/finance"
+                        : pathname === item.href ||
                         pathname?.startsWith(`${item.href}/`);
 
                   return (

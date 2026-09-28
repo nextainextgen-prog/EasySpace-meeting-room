@@ -7,6 +7,7 @@ import {
 } from "@/lib/templates/telegram";
 import { HOLD_WARNING_HOURS } from "@/lib/booking-hold";
 import { restoreDisplacedFor } from "@/lib/server/public-booking";
+import { sendBookingLine } from "@/lib/server/booking-line";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +98,10 @@ export async function GET(request: Request) {
 
     // An online booking that never got confirmed gives internal meetings
     // it displaced their slot back.
-    for (const r of expired) await restoreDisplacedFor(r.id);
+    for (const r of expired) {
+      await restoreDisplacedFor(r.id);
+      await sendBookingLine(r.id, "cancelled");
+    }
 
     for (const r of expired) {
       void dispatchEvent(
