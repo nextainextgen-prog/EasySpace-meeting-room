@@ -1,23 +1,4 @@
 import Link from "next/link";
-import {
-  AirVent,
-  Car,
-  Coffee,
-  LayoutGrid,
-  Mic,
-  MonitorSpeaker,
-  Plug,
-  Projector,
-  Sparkles,
-  Speaker,
-  Tv,
-  Wifi,
-  ShowerHead,
-  Phone,
-  MessageCircle,
-  Clock,
-  type LucideIcon,
-} from "lucide-react";
 
 /** Brand mark + wordmark. Links home to the room list, keeping the channel. */
 export function PublicTopBar({
@@ -51,12 +32,9 @@ export function PublicTopBar({
 
 export function LiveBadge() {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-pill border border-emerald-600/15 bg-emerald-50 px-2.5 py-1 text-[12px] font-semibold tracking-tight text-emerald-700">
-      <span className="relative flex h-1.5 w-1.5">
-        <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500 opacity-60" />
-        <span className="relative h-1.5 w-1.5 rounded-full bg-emerald-500" />
-      </span>
-      อัปเดตสด
+    <span className="inline-flex items-center gap-1.5 text-[12px] font-medium tracking-tight text-ink-2">
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      ข้อมูลเรียลไทม์
     </span>
   );
 }
@@ -83,20 +61,10 @@ export function PublicFooter({
           <p className="text-[12px] font-semibold tracking-tight text-ink-3">
             ติดต่อ
           </p>
-          <a
-            href={lineUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-2 text-ink-1 hover:text-primary-600"
-          >
-            <MessageCircle size={16} strokeWidth={1.75} className="text-[#06C755]" />
+          <a href={lineUrl} target="_blank" rel="noreferrer" className="block text-ink-1 hover:text-primary-600">
             LINE {lineId}
           </a>
-          <a
-            href={`tel:${phone.replace(/[^0-9+]/g, "")}`}
-            className="flex items-center gap-2 text-ink-1 hover:text-primary-600"
-          >
-            <Phone size={16} strokeWidth={1.75} className="text-ink-3" />
+          <a href={`tel:${phone.replace(/[^0-9+]/g, "")}`} className="block text-ink-1 tabular-nums hover:text-primary-600">
             {phone}
           </a>
         </div>
@@ -104,10 +72,7 @@ export function PublicFooter({
           <p className="text-[12px] font-semibold tracking-tight text-ink-3">
             เวลาให้บริการ
           </p>
-          <p className="flex items-center gap-2 text-ink-1">
-            <Clock size={16} strokeWidth={1.75} className="text-ink-3" />
-            ทุกวัน 08:30 – 22:00 น.
-          </p>
+          <p className="text-ink-1 tabular-nums">ทุกวัน 08:30 – 22:00 น.</p>
         </div>
       </div>
       <div className="border-t border-slate-900/[0.05] py-4 text-center text-[11px] text-ink-3">
@@ -115,24 +80,4 @@ export function PublicFooter({
       </div>
     </footer>
   );
-}
-
-const AMENITY_RULES: Array<[RegExp, LucideIcon]> = [
-  [/wi-?fi|อินเทอร์เน็ต|internet/i, Wifi],
-  [/โปรเจ|projector/i, Projector],
-  [/ไมโครโฟน|ไมค์|mic/i, Mic],
-  [/เครื่องเสียง|ลำโพง|speaker|sound/i, Speaker],
-  [/จอ|tv|ทีวี|โทรทัศน์|display/i, Tv],
-  [/ปลั๊ก|plug|power/i, Plug],
-  [/แอร์|air/i, AirVent],
-  [/กาแฟ|coffee|pantry|อาหาร|เครื่องดื่ม/i, Coffee],
-  [/ที่จอดรถ|parking|จอดรถ/i, Car],
-  [/ห้องน้ำ|restroom/i, ShowerHead],
-  [/ไวท์บอร์ด|whiteboard|board/i, LayoutGrid],
-  [/conference|vdo|video|zoom/i, MonitorSpeaker],
-];
-
-export function amenityIcon(label: string): LucideIcon {
-  for (const [re, icon] of AMENITY_RULES) if (re.test(label)) return icon;
-  return Sparkles;
 }

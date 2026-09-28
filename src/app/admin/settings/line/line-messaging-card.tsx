@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { AlertTriangle, CheckCircle2, Copy, KeyRound, PlugZap, Save } from "lucide-react";
+import { Check, Copy } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
@@ -56,9 +56,7 @@ export function LineMessagingCard({
       <div className="space-y-3">
         {/* Token */}
         <div className="rounded-input border border-line bg-surface-subtle/60 p-3">
-          <p className="mb-1 inline-flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-            <KeyRound size={14} className="text-ink-3" /> Channel access token (long-lived)
-          </p>
+          <p className="mb-1 text-sm font-semibold tracking-tight">Channel access token (long-lived)</p>
           <p className="mb-2 text-xs text-ink-3">
             LINE Developers → Messaging API channel ของ OA → แท็บ Messaging API → Channel access token
           </p>
@@ -97,7 +95,6 @@ export function LineMessagingCard({
             size="sm"
             variant="secondary"
             className="mt-2"
-            iconLeft={<PlugZap size={12} />}
             disabled={pending}
             onClick={() =>
               start(async () => {
@@ -123,7 +120,6 @@ export function LineMessagingCard({
             />
             <Button
               size="sm"
-              iconLeft={<Save size={12} />}
               disabled={pending || liffId === initialLiff}
               onClick={() =>
                 start(async () => {
@@ -167,9 +163,7 @@ export function LineMessagingCard({
         </div>
 
         {msg && (
-          <p className={cn("inline-flex items-center gap-1 text-xs", msg.tone === "ok" ? "text-emerald-700" : "text-red-600")}>
-            {msg.tone === "ok" ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />} {msg.text}
-          </p>
+          <p className={cn("text-xs", msg.tone === "ok" ? "text-emerald-700" : "text-red-600")}>{msg.text}</p>
         )}
       </div>
     </Card>
@@ -185,7 +179,7 @@ function CopyRow({ value, copied, onCopy }: { value: string; copied: boolean; on
         onClick={onCopy}
         className="inline-flex h-7 items-center gap-1 rounded-pill border border-primary-100 bg-white px-2.5 text-[11px] font-semibold text-primary-700"
       >
-        {copied ? <CheckCircle2 size={12} /> : <Copy size={12} />}
+        {copied ? <Check size={12} weight="bold" /> : <Copy size={12} weight="light" />}
         {copied ? "คัดลอกแล้ว" : "คัดลอก"}
       </button>
     </span>

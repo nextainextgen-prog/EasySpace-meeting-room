@@ -2,19 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import {
-  Check,
-  CircleCheck,
-  Copy,
-  Download,
-  ImageUp,
-  Info,
-  Landmark,
-  Loader2,
-  QrCode,
-  RefreshCw,
-  Timer,
-} from "lucide-react";
+import { Check, Copy } from "@phosphor-icons/react";
+import { Spinner } from "./spinner";
 import { cn } from "@/lib/cn";
 import { bkkTime } from "@/lib/time/bkk";
 import {
@@ -49,13 +38,17 @@ async function prepareImage(file: File): Promise<Blob> {
 }
 
 function useCountdown(deadline: string | null) {
-  const [now, setNow] = useState(() => Date.now());
+  // Null until mounted: the server and the browser would never agree on the
+  // current second, and a mismatch throws away the hydrated tree.
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     if (!deadline) return;
+    setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [deadline]);
   if (!deadline) return null;
+  if (now === null) return { expired: false, label: "--:--" };
   const ms = new Date(deadline).getTime() - now;
   if (ms <= 0) return { expired: true, label: "หมดเวลา" };
   const total = Math.floor(ms / 1000);
@@ -170,12 +163,10 @@ export function PaymentPanel({
             <div
               className={cn(
                 "shrink-0 rounded-[14px] px-3 py-2 text-right",
-                expired ? "bg-rose-500/20" : "bg-white/10",
+                expired ? "bg-white/5" : "bg-white/10",
               )}
             >
-              <p className="flex items-center justify-end gap-1 text-[11px] text-white/60">
-                <Timer size={12} strokeWidth={1.75} /> ชำระภายใน
-              </p>
+              <p className="text-[11px] text-white/60">ชำระภายใน</p>
               <p className="text-[18px] font-bold tabular-nums tracking-tight">{countdown.label}</p>
               {deadline && !expired && (
                 <p className="text-[10.5px] text-white/50 tabular-nums">ถึง {bkkTime(deadline)} น.</p>
@@ -197,10 +188,10 @@ export function PaymentPanel({
             <div className="mb-4 grid grid-cols-2 gap-1 rounded-pill bg-slate-100 p-1">
               {(
                 [
-                  ["promptpay", "พร้อมเพย์", QrCode],
-                  ["bank", "โอนเข้าบัญชี", Landmark],
+                  ["promptpay", "พร้อมเพย์"],
+                  ["bank", "โอนเข้าบัญชี"],
                 ] as const
-              ).map(([key, label, Icon]) => (
+              ).map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
@@ -210,7 +201,7 @@ export function PaymentPanel({
                     tab === key ? "bg-white text-ink-1 shadow-card" : "text-ink-3",
                   )}
                 >
-                  <Icon size={16} strokeWidth={1.75} /> {label}
+                  {label}
                 </button>
               ))}
             </div>
@@ -224,7 +215,7 @@ export function PaymentPanel({
                   <img src={qr} alt="QR พร้อมเพย์" className="h-auto w-full" />
                 ) : (
                   <div className="grid aspect-square place-items-center text-ink-3">
-                    <Loader2 size={20} className="animate-spin" />
+                    <Spinner className="h-5 w-5" />
                   </div>
                 )}
               </div>
@@ -235,9 +226,9 @@ export function PaymentPanel({
                 <a
                   href={qr}
                   download={`promptpay-${reference}.png`}
-                  className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-primary-600"
+                  className="mt-2 inline-block text-[12.5px] font-semibold text-ink-1 underline underline-offset-4"
                 >
-                  <Download size={14} strokeWidth={1.75} /> บันทึกรูป QR
+                  บันทึกรูป QR
                 </a>
               )}
             </div>
@@ -253,7 +244,7 @@ export function PaymentPanel({
                       onClick={() => copy(b.account_number, b.id)}
                       className="inline-flex h-8 shrink-0 items-center gap-1 rounded-pill bg-slate-100 px-3 text-[12px] font-semibold text-ink-1"
                     >
-                      {copied === b.id ? <Check size={14} strokeWidth={2.25} /> : <Copy size={14} strokeWidth={1.75} />}
+                      {copied === b.id ? <Check size={14} weight="bold" /> : <Copy size={14} weight="light" />}
                       {copied === b.id ? "คัดลอกแล้ว" : "คัดลอก"}
                     </button>
                   </div>
@@ -293,9 +284,9 @@ export function PaymentPanel({
                     type="button"
                     disabled={state === "checking"}
                     onClick={() => inputRef.current?.click()}
-                    className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-semibold text-primary-600 disabled:opacity-50"
+                    className="mt-1 text-[12.5px] font-semibold text-ink-1 underline underline-offset-4 disabled:opacity-50"
                   >
-                    <RefreshCw size={13} strokeWidth={1.75} /> เปลี่ยนรูป
+                    เปลี่ยนรูป
                   </button>
                 </div>
               </div>
@@ -303,37 +294,33 @@ export function PaymentPanel({
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="mt-3 flex w-full flex-col items-center justify-center gap-1.5 rounded-[18px] border-2 border-dashed border-slate-900/[0.12] bg-slate-50/60 px-4 py-6 text-center transition hover:border-primary-600/40 hover:bg-primary-50/30"
+                className="mt-3 flex w-full flex-col items-center justify-center gap-1 rounded-[18px] border border-dashed border-slate-900/20 px-4 py-6 text-center transition hover:border-ink-1"
               >
-                <span className="grid h-11 w-11 place-items-center rounded-full bg-white text-ink-1 ring-1 ring-slate-900/[0.07]">
-                  <ImageUp size={20} strokeWidth={1.75} />
+                <span className="text-[14px] font-semibold tracking-tight underline decoration-slate-900/20 underline-offset-4">
+                  เลือกรูปสลิป
                 </span>
-                <span className="text-[14px] font-semibold tracking-tight">เลือกรูปสลิป</span>
                 <span className="text-[12px] text-ink-3">ถ่ายภาพหรือเลือกจากคลังรูป · เห็น QR บนสลิปชัดเจน</span>
               </button>
             )}
 
             {state === "error" && message && (
-              <div role="alert" className="mt-3 flex items-start gap-2 rounded-[14px] border border-rose-200 bg-rose-50 px-3.5 py-3 text-[13px] text-rose-700">
-                <Info size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
+              <p role="alert" className="mt-3 border-l-2 border-rose-600 pl-3 text-[13px] text-rose-700">
                 {message}
-              </div>
+              </p>
             )}
 
             <button
               type="button"
               disabled={!file || state === "checking"}
               onClick={upload}
-              className="mt-4 inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-pill bg-primary-600 text-[16px] font-semibold tracking-tight text-white shadow-[0_10px_24px_-10px_rgba(45,78,245,0.75)] transition hover:bg-primary-700 disabled:bg-slate-200 disabled:text-ink-3 disabled:shadow-none"
+              className="mt-4 inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-pill bg-ink-1 text-[16px] font-semibold tracking-tight text-white transition hover:bg-slate-800 disabled:bg-slate-200 disabled:text-ink-3"
             >
               {state === "checking" ? (
                 <>
-                  <Loader2 size={18} className="animate-spin" /> กำลังตรวจสอบสลิปกับธนาคาร...
+                  <Spinner /> กำลังตรวจสอบสลิปกับธนาคาร...
                 </>
               ) : (
-                <>
-                  <CircleCheck size={18} strokeWidth={2} /> ยืนยันการชำระเงิน
-                </>
+                "ยืนยันการชำระเงิน"
               )}
             </button>
           </div>

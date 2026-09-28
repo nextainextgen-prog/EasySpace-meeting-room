@@ -14,7 +14,7 @@ export default async function SlipsPage() {
       <AdminTopbar title="ตรวจสลิป" subtitle="สลิปที่ลูกค้าแนบจากหน้าจองออนไลน์ · ตรวจอัตโนมัติด้วย EasySlip" />
       <div className="p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
         {tableMissing ? (
-          <div className="rounded-card border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
+          <div className="rounded-card border border-line bg-white p-5 text-sm text-ink-1">
             ยังไม่ได้รัน migration <code className="font-mono">00000000000016_online_payment.sql</code> ใน Supabase SQL
             editor — รันแล้วหน้านี้จะแสดงรายการสลิป
           </div>

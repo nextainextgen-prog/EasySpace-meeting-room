@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Loader2, MessageCircle } from "lucide-react";
+import { Check } from "@phosphor-icons/react";
+import { Spinner } from "./spinner";
 import { linkLineAccount } from "@/lib/actions/public-booking";
 import { useLiff } from "./liff";
 
@@ -49,8 +50,8 @@ export function LineLink({
 
   if (linked) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-pill bg-[#06C755]/10 px-4 py-2.5 text-[13px] font-semibold text-[#05A847]">
-        <Check size={16} strokeWidth={2.25} />
+      <div className="flex items-center justify-center gap-2 py-2 text-[13px] font-medium text-ink-2">
+        <Check size={15} weight="bold" className="text-[#06C755]" />
         {note ?? "ส่งรายละเอียดการจองเข้า LINE ของคุณแล้ว"}
       </div>
     );
@@ -59,7 +60,7 @@ export function LineLink({
   if (busy) {
     return (
       <div className="flex items-center justify-center gap-2 py-2.5 text-[13px] text-ink-3">
-        <Loader2 size={16} className="animate-spin" /> กำลังเชื่อมกับ LINE...
+        <Spinner /> กำลังเชื่อมกับ LINE...
       </div>
     );
   }
@@ -71,22 +72,18 @@ export function LineLink({
       className={
         compact
           ? "inline-flex h-12 w-full items-center justify-center gap-1.5 rounded-pill bg-[#06C755] text-[14px] font-semibold tracking-tight text-white hover:brightness-95"
-          : "flex w-full items-center gap-3 rounded-[18px] border border-[#06C755]/25 bg-[#06C755]/[0.06] p-3.5 text-left transition hover:bg-[#06C755]/10"
+          : "flex w-full items-center gap-3 rounded-[18px] border border-slate-900/[0.08] bg-white p-4 text-left transition hover:border-slate-900/20"
       }
     >
       {compact ? (
-        <>
-          <MessageCircle size={16} strokeWidth={2} /> รับการยืนยันทาง LINE
-        </>
+        "รับการยืนยันทาง LINE"
       ) : (
         <>
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#06C755] text-white">
-            <MessageCircle size={18} strokeWidth={2} />
-          </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[14px] font-semibold tracking-tight">รับการยืนยันทาง LINE</span>
             <span className="block text-[12px] text-ink-3">รายละเอียดการจองและใบยืนยันการชำระเงินจะส่งเข้าแชทของคุณ</span>
           </span>
+          <span className="shrink-0 rounded-pill bg-[#06C755] px-3 py-1.5 text-[12px] font-semibold text-white">เปิดใน LINE</span>
         </>
       )}
     </button>

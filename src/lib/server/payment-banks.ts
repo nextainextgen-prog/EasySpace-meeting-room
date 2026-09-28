@@ -10,6 +10,14 @@ export interface BankForPayment {
 
 /** Active receiving accounts, default first — as customers will see them. */
 export async function listPaymentBanks(): Promise<BankForPayment[]> {
+  // Local UI review only: a stand-in account without touching the live table.
+  if (process.env.NODE_ENV !== "production" && process.env.DEV_PAYMENT_BANK) {
+    try {
+      return JSON.parse(process.env.DEV_PAYMENT_BANK) as BankForPayment[];
+    } catch {
+      // fall through to the real table
+    }
+  }
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("bank_accounts")

@@ -1,16 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import {
-  Building2,
-  ChevronLeft,
-  Info,
-  Loader2,
-  Minus,
-  Plus,
-  ShieldCheck,
-  X,
-} from "lucide-react";
+import { CaretLeft, Minus, Plus, X } from "@phosphor-icons/react";
+import { Spinner } from "./spinner";
 import { cn } from "@/lib/cn";
 import {
   durationLabel,
@@ -190,10 +182,10 @@ export function DetailsSheet({
             className="grid h-9 w-9 place-items-center rounded-full text-ink-2 hover:bg-slate-100 sm:hidden"
             aria-label="ย้อนกลับ"
           >
-            <ChevronLeft size={20} strokeWidth={1.75} />
+            <CaretLeft size={20} weight="light" />
           </button>
           <div className="flex-1 sm:pl-2">
-            <p className="text-[12px] font-semibold tracking-tight text-primary-600">
+            <p className="text-[12px] font-medium tracking-tight text-ink-3">
               ขั้นตอนที่ 2
             </p>
             <p className="text-[17px] font-bold tracking-tighter">ข้อมูลผู้จอง</p>
@@ -204,7 +196,7 @@ export function DetailsSheet({
             className="hidden h-9 w-9 place-items-center rounded-full text-ink-2 hover:bg-slate-100 sm:grid"
             aria-label="ปิด"
           >
-            <X size={18} strokeWidth={1.75} />
+            <X size={18} weight="light" />
           </button>
         </div>
 
@@ -219,9 +211,7 @@ export function DetailsSheet({
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={room.thumbnail_url} alt="" className="h-full w-full object-cover" />
               ) : (
-                <div className="grid h-full w-full place-items-center text-white/70">
-                  <Building2 size={22} strokeWidth={1.5} />
-                </div>
+                <div className="h-full w-full" />
               )}
             </div>
             <div className="min-w-0 flex-1">
@@ -292,7 +282,7 @@ export function DetailsSheet({
                   disabled={attendees <= 1}
                   className="grid h-9 w-9 place-items-center rounded-[10px] text-ink-1 hover:bg-slate-100 disabled:text-ink-3/50"
                 >
-                  <Minus size={16} strokeWidth={2} />
+                  <Minus size={16} weight="bold" />
                 </button>
                 <span className="text-[16px] font-semibold tabular-nums">{attendees} ท่าน</span>
                 <button
@@ -302,7 +292,7 @@ export function DetailsSheet({
                   disabled={attendees >= maxAttendees}
                   className="grid h-9 w-9 place-items-center rounded-[10px] text-ink-1 hover:bg-slate-100 disabled:text-ink-3/50"
                 >
-                  <Plus size={16} strokeWidth={2} />
+                  <Plus size={16} weight="bold" />
                 </button>
               </div>
             </Field>
@@ -341,9 +331,8 @@ export function DetailsSheet({
           {error && (
             <div
               role="alert"
-              className="mt-4 flex items-start gap-2 rounded-[14px] border border-rose-200 bg-rose-50 px-3.5 py-3 text-[13px] text-rose-700"
+              className="mt-4 border-l-2 border-rose-600 pl-3 text-[13px] text-rose-700"
             >
-              <Info size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
               {error.message}
             </div>
           )}
@@ -354,11 +343,11 @@ export function DetailsSheet({
           <button
             type="submit"
             disabled={pending}
-            className="inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-pill bg-primary-600 text-[16px] font-semibold tracking-tight text-white shadow-[0_10px_24px_-10px_rgba(45,78,245,0.75)] transition hover:bg-primary-700 active:scale-[0.99] disabled:opacity-70"
+            className="inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-pill bg-ink-1 text-[16px] font-semibold tracking-tight text-white transition hover:bg-slate-800 active:scale-[0.99] disabled:opacity-70"
           >
             {pending ? (
               <>
-                <Loader2 size={18} className="animate-spin" /> กำลังจองห้อง...
+                <Spinner /> กำลังจองห้อง...
               </>
             ) : (
               <>
@@ -368,10 +357,9 @@ export function DetailsSheet({
               </>
             )}
           </button>
-          <p className="mt-2.5 flex items-center justify-center gap-1.5 text-[11.5px] text-ink-3">
-            <ShieldCheck size={14} strokeWidth={1.75} />
+          <p className="mt-2.5 text-center text-[11.5px] text-ink-3">
             {dueNow > 0
-              ? `ขั้นตอนถัดไป: โอน${paymentModeLabel(payment.mode, payment.depositPercent)}และแนบสลิป`
+              ? `ขั้นตอนถัดไป: โอน${paymentModeLabel(payment.mode, payment.depositPercent)} และแนบสลิป`
               : "ยังไม่มีการเก็บเงิน · ข้อมูลใช้เพื่อยืนยันการจองเท่านั้น"}
           </p>
         </div>
@@ -407,7 +395,7 @@ function Field({
       <span className="mb-1.5 flex items-baseline justify-between gap-2">
         <span className={cn("text-[13px] font-semibold tracking-tight", invalid ? "text-rose-600" : "text-ink-1")}>
           {label}
-          {required && <span className="ml-0.5 text-primary-600">*</span>}
+          {required && <span className="ml-0.5 text-ink-3">*</span>}
         </span>
         {hint && <span className="text-[11.5px] text-ink-3">{hint}</span>}
       </span>

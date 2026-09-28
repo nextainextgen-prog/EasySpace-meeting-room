@@ -3,15 +3,12 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
-  Loader2,
-  Search,
+  CaretLeft,
+  CaretRight,
+  MagnifyingGlass,
+  ArrowSquareOut,
   X,
-  XCircle,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { getSlipImage, reviewSlipAction } from "@/lib/actions/online-payment";
 
@@ -60,13 +57,13 @@ const TONE: Record<string, string> = {
   verified: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   rejected: "bg-slate-100 text-ink-2 ring-slate-200",
-  amount_mismatch: "bg-amber-50 text-amber-700 ring-amber-200",
-  receiver_mismatch: "bg-amber-50 text-amber-700 ring-amber-200",
-  too_old: "bg-amber-50 text-amber-700 ring-amber-200",
-  api_error: "bg-amber-50 text-amber-700 ring-amber-200",
+  amount_mismatch: "bg-white text-ink-1 ring-ink-1/40",
+  receiver_mismatch: "bg-white text-ink-1 ring-ink-1/40",
+  too_old: "bg-white text-ink-1 ring-ink-1/40",
+  api_error: "bg-white text-ink-1 ring-ink-1/40",
   duplicate: "bg-rose-50 text-rose-700 ring-rose-200",
   not_slip: "bg-rose-50 text-rose-700 ring-rose-200",
-  pending_bank: "bg-sky-50 text-sky-700 ring-sky-200",
+  pending_bank: "bg-slate-100 text-ink-2 ring-slate-200",
 };
 
 const baht = (n: number | null) =>
@@ -167,7 +164,7 @@ export function SlipsBoard({ rows }: { rows: SlipRow[] }) {
         {[
           { label: "สลิปทั้งหมด", value: counts.all.toLocaleString() },
           { label: "ตรวจผ่าน", value: counts.passed.toLocaleString(), tone: "text-emerald-700" },
-          { label: "รอตรวจสอบ", value: counts.review.toLocaleString(), tone: counts.review ? "text-amber-600" : "" },
+          { label: "รอตรวจสอบ", value: counts.review.toLocaleString(), tone: "" },
           { label: "ยอดรับวันนี้", value: baht(receivedToday) },
         ].map((k) => (
           <div key={k.label} className="surface-card px-4 py-3.5">
@@ -207,7 +204,7 @@ export function SlipsBoard({ rows }: { rows: SlipRow[] }) {
           ))}
         </div>
         <label className="flex h-10 w-full max-w-xs items-center gap-2 rounded-pill bg-white px-3.5 ring-1 ring-line">
-          <Search size={15} className="text-ink-3" />
+          <MagnifyingGlass size={16} weight="light" className="text-ink-3" />
           <input
             value={q}
             onChange={(e) => {
@@ -305,7 +302,7 @@ export function SlipsBoard({ rows }: { rows: SlipRow[] }) {
             onClick={() => setPage(current - 1)}
             className="grid h-9 w-9 place-items-center rounded-input border border-line bg-white text-ink-2 disabled:text-ink-3/50"
           >
-            <ChevronLeft size={16} />
+            <CaretLeft size={16} weight="light" />
           </button>
           <span className="grid h-9 min-w-9 place-items-center rounded-input bg-primary-600 px-3 text-sm font-bold text-white">
             {current}
@@ -317,7 +314,7 @@ export function SlipsBoard({ rows }: { rows: SlipRow[] }) {
             onClick={() => setPage(current + 1)}
             className="grid h-9 w-9 place-items-center rounded-input border border-line bg-white text-ink-2 disabled:text-ink-3/50"
           >
-            <ChevronRight size={16} />
+            <CaretRight size={16} weight="light" />
           </button>
         </div>
       </div>
@@ -416,7 +413,7 @@ function SlipDrawer({ row, onClose }: { row: SlipRow; onClose: () => void }) {
             <p className="font-semibold tracking-tight">{row.company || row.customerName || "-"}</p>
           </div>
           <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full hover:bg-surface-subtle">
-            <X size={18} />
+            <X size={18} weight="light" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
@@ -428,12 +425,12 @@ function SlipDrawer({ row, onClose }: { row: SlipRow; onClose: () => void }) {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={img} alt="สลิป" className="w-full rounded-input ring-1 ring-line" />
                     <span className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-white/90 text-ink-2 opacity-0 transition group-hover:opacity-100">
-                      <ExternalLink size={14} />
+                      <ArrowSquareOut size={14} weight="light" />
                     </span>
                   </a>
                 ) : (
                   <div className="grid aspect-[3/5] place-items-center rounded-input bg-surface-subtle text-ink-3">
-                    <Loader2 size={18} className="animate-spin" />
+                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-current border-r-transparent" />
                   </div>
                 )
               ) : (
@@ -477,7 +474,7 @@ function SlipDrawer({ row, onClose }: { row: SlipRow; onClose: () => void }) {
                 onClick={() => decide("reject")}
                 className="inline-flex h-10 items-center justify-center gap-1.5 rounded-pill border border-line text-sm font-semibold text-ink-2 hover:bg-surface-subtle"
               >
-                <XCircle size={16} /> ปฏิเสธ
+                ปฏิเสธ
               </button>
               <button
                 type="button"
@@ -485,7 +482,7 @@ function SlipDrawer({ row, onClose }: { row: SlipRow; onClose: () => void }) {
                 onClick={() => decide("approve")}
                 className="inline-flex h-10 items-center justify-center gap-1.5 rounded-pill bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-700"
               >
-                {pending ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} อนุมัติการชำระ
+                {pending && <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />} อนุมัติการชำระ
               </button>
             </div>
           </div>

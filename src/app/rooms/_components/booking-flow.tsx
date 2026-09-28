@@ -2,22 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowUpRight,
-  Building2,
-  CalendarDays,
-  ChevronRight,
-  CircleCheck,
-  Clock,
-  Info,
-  MessageCircle,
-  Minus,
-  Phone,
-  Plus,
-  ShieldCheck,
-  Users,
-  Wallet,
-} from "lucide-react";
+import { ArrowUpRight, Minus, Plus } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { addDays, bkkParts, fromBkk, timeToMinutes } from "@/lib/time/bkk";
 import {
@@ -43,7 +28,7 @@ import {
   paymentModeLabel,
   type PublicPaymentInfo,
 } from "@/lib/public-booking/payment";
-import { amenityIcon } from "./chrome";
+import { AmenityIcon } from "./amenity-icon";
 import { DetailsSheet } from "./details-sheet";
 import { SuccessView, type BookingSuccess } from "./success-view";
 
@@ -249,7 +234,7 @@ export function BookingFlow({
           <Link href={`/rooms?src=${channel}`} className="hover:text-ink-1">
             ห้องประชุมทั้งหมด
           </Link>
-          <ChevronRight size={12} strokeWidth={1.75} />
+          <span aria-hidden>/</span>
           <span className="text-ink-2">{room.name}</span>
         </nav>
 
@@ -327,10 +312,9 @@ export function BookingFlow({
                 type="button"
                 disabled={!selection}
                 onClick={() => setSheetOpen(true)}
-                className="inline-flex h-12 shrink-0 items-center gap-1.5 rounded-pill bg-primary-600 px-6 text-[15px] font-semibold tracking-tight text-white shadow-[0_8px_20px_-6px_rgba(45,78,245,0.55)] transition active:scale-[0.98] disabled:bg-slate-200 disabled:text-ink-3 disabled:shadow-none"
+                className="inline-flex h-12 shrink-0 items-center rounded-pill bg-ink-1 px-7 text-[15px] font-semibold tracking-tight text-white transition active:scale-[0.98] disabled:bg-slate-200 disabled:text-ink-3"
               >
                 จองห้องนี้
-                <ChevronRight size={16} strokeWidth={2} />
               </button>
             </div>
           </div>
@@ -403,8 +387,8 @@ function RoomHero({
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : (
-          <div className="absolute inset-0 grid place-items-center text-white/50">
-            <Building2 size={56} strokeWidth={1.25} />
+          <div className="absolute inset-0 grid place-items-center text-[13px] font-medium text-white/70">
+            {room.name}
           </div>
         )}
         <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-slate-950/35 to-transparent" />
@@ -412,25 +396,15 @@ function RoomHero({
         <div className="absolute left-3 top-3 sm:left-4 sm:top-4">
           <span
             className={cn(
-              "inline-flex items-center gap-2 rounded-pill border border-white/40 bg-white/90 px-3 py-1.5 text-[12px] font-semibold tracking-tight shadow-sm backdrop-blur-md",
-              status.tone === "free" && "text-emerald-700",
-              status.tone === "busy" && "text-amber-700",
-              status.tone === "closed" && "text-ink-2",
+              "inline-flex items-center gap-2 rounded-pill bg-white px-3 py-1.5 text-[12px] font-semibold tracking-tight text-ink-1",
             )}
           >
-            <span className="relative flex h-2 w-2">
-              {status.tone === "free" && (
-                <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500 opacity-50" />
+            <span
+              className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                status.tone === "free" ? "bg-emerald-500" : "bg-slate-400",
               )}
-              <span
-                className={cn(
-                  "relative h-2 w-2 rounded-full",
-                  status.tone === "free" && "bg-emerald-500",
-                  status.tone === "busy" && "bg-amber-500",
-                  status.tone === "closed" && "bg-slate-400",
-                )}
-              />
-            </span>
+            />
             {status.label}
             <span className="font-medium text-ink-3">· {status.sub}</span>
           </span>
@@ -455,36 +429,26 @@ function RoomHero({
       </div>
 
       <div className="px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
-        <p className="text-[12px] font-semibold tracking-tight text-primary-600">
+        <p className="text-[12px] font-medium tracking-tight text-ink-3">
           ห้องประชุม{room.floor ? ` · ชั้น ${room.floor}` : ""}
         </p>
         <h1 className="mt-1 text-[28px] font-bold leading-[1.08] tracking-tightest sm:text-[34px]">
           {room.name}
         </h1>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {config.show_capacity && capacity && <HeroChip icon={Users}>{capacity}</HeroChip>}
-          {config.show_hourly_rate && room.hourly_rate > 0 && (
-            <HeroChip icon={Wallet}>฿{formatBahtPlain(room.hourly_rate)} / ชม.</HeroChip>
-          )}
-          <HeroChip icon={Clock}>เปิด 08:30 – 22:00</HeroChip>
-        </div>
+        <dl className="mt-4 grid grid-cols-3 divide-x divide-slate-900/[0.07] border-t border-slate-900/[0.07] pt-4 text-center">
+          {[
+            ["รองรับ", config.show_capacity && capacity ? capacity : "-"],
+            ["ราคา", config.show_hourly_rate && room.hourly_rate > 0 ? `฿${formatBahtPlain(room.hourly_rate)}/ชม.` : "-"],
+            ["เปิดให้บริการ", "08:30–22:00"],
+          ].map(([k, v]) => (
+            <div key={k} className="px-2">
+              <dt className="text-[11.5px] text-ink-3">{k}</dt>
+              <dd className="mt-0.5 whitespace-nowrap text-[13.5px] font-semibold tracking-tight tabular-nums">{v}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </section>
-  );
-}
-
-function HeroChip({
-  icon: Icon,
-  children,
-}: {
-  icon: typeof Users;
-  children: React.ReactNode;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-pill bg-slate-50 px-3 py-1.5 text-[12.5px] font-medium tracking-tight text-ink-2 ring-1 ring-slate-900/[0.06] tabular-nums">
-      <Icon size={14} strokeWidth={1.75} className="text-ink-3" />
-      {children}
-    </span>
   );
 }
 
@@ -539,7 +503,7 @@ function PickerCard(p: PickerProps) {
     <section className="rounded-card-lg border border-slate-900/[0.07] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.10)] sm:p-5">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="text-[12px] font-semibold tracking-tight text-primary-600">
+          <p className="text-[12px] font-medium tracking-tight text-ink-3">
             ขั้นตอนที่ 1
           </p>
           <h2 className="mt-0.5 text-[19px] font-bold tracking-tighter">เลือกวันและเวลา</h2>
@@ -602,10 +566,7 @@ function PickerCard(p: PickerProps) {
       </div>
 
       {p.notice && (
-        <div className="mt-3 flex items-start gap-2 rounded-[14px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-800">
-          <Info size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
-          {p.notice}
-        </div>
+        <p className="mt-3 border-l-2 border-ink-1 pl-3 text-[13px] text-ink-1">{p.notice}</p>
       )}
 
       {visible.length === 0 ? (
@@ -618,7 +579,7 @@ function PickerCard(p: PickerProps) {
               onClick={() => p.pickDate(p.days[1])}
               className="mt-3 inline-flex h-9 items-center gap-1 rounded-pill bg-ink-1 px-4 text-[13px] font-semibold text-white"
             >
-              ดูพรุ่งนี้ <ChevronRight size={14} strokeWidth={2} />
+              ดูวันถัดไป
             </button>
           )}
         </div>
@@ -662,9 +623,7 @@ function PickerCard(p: PickerProps) {
       )}
 
       {p.hint && (
-        <p className="mt-3 flex items-center gap-1.5 text-[12.5px] text-amber-700">
-          <Info size={14} strokeWidth={1.75} /> {p.hint}
-        </p>
+        <p className="mt-3 text-[12.5px] text-ink-2">{p.hint}</p>
       )}
 
       {/* Legend */}
@@ -689,7 +648,7 @@ function PickerCard(p: PickerProps) {
               disabled={p.duration - PUBLIC_SLOT_MINUTES < p.minDur}
               onClick={() => p.stepDuration(-PUBLIC_SLOT_MINUTES)}
             >
-              <Minus size={16} strokeWidth={2} />
+              <Minus size={16} weight="bold" />
             </StepButton>
             <span className="min-w-[72px] text-center text-[13px] font-semibold tabular-nums">
               {durationLabel(p.duration)}
@@ -699,7 +658,7 @@ function PickerCard(p: PickerProps) {
               disabled={p.duration + PUBLIC_SLOT_MINUTES > Math.min(p.maxRun, p.maxDur)}
               onClick={() => p.stepDuration(PUBLIC_SLOT_MINUTES)}
             >
-              <Plus size={16} strokeWidth={2} />
+              <Plus size={16} weight="bold" />
             </StepButton>
           </div>
         </div>
@@ -764,8 +723,7 @@ function SummaryCard({
     <section className="rounded-card-lg border border-slate-900/[0.07] bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.10)]">
       {selection ? (
         <>
-          <div className="flex items-center gap-2 text-[13px] text-ink-2">
-            <CalendarDays size={16} strokeWidth={1.75} className="text-ink-3" />
+          <div className="text-[13px] text-ink-2">
             <span className="tabular-nums">
               {thaiDateShort(date)} · {selection.start}–{selection.end} น.
             </span>
@@ -779,14 +737,13 @@ function SummaryCard({
         type="button"
         disabled={!selection}
         onClick={onContinue}
-        className="mt-4 inline-flex h-12 w-full items-center justify-center gap-1.5 rounded-pill bg-primary-600 text-[15px] font-semibold tracking-tight text-white shadow-[0_10px_24px_-10px_rgba(45,78,245,0.7)] transition hover:bg-primary-700 active:scale-[0.99] disabled:bg-slate-200 disabled:text-ink-3 disabled:shadow-none"
+        className="mt-4 inline-flex h-12 w-full items-center justify-center rounded-pill bg-ink-1 text-[15px] font-semibold tracking-tight text-white transition hover:bg-slate-800 active:scale-[0.99] disabled:bg-slate-200 disabled:text-ink-3"
       >
-        จองห้องนี้ <ChevronRight size={16} strokeWidth={2} />
+        จองห้องนี้
       </button>
-      <p className="mt-3 flex items-center justify-center gap-1.5 text-[11.5px] text-ink-3">
-        <ShieldCheck size={14} strokeWidth={1.75} />
+      <p className="mt-3 text-center text-[11.5px] text-ink-3">
         {payment.ready
-          ? `${paymentModeLabel(payment.mode, payment.depositPercent)}ออนไลน์ · ยืนยันการจองทันทีเมื่อสลิปผ่าน`
+          ? `${paymentModeLabel(payment.mode, payment.depositPercent)} ออนไลน์ · ยืนยันการจองทันทีเมื่อสลิปผ่าน`
           : "ยังไม่ต้องชำระเงิน · ทีมงานยืนยันก่อนทุกครั้ง"}
       </p>
     </section>
@@ -829,7 +786,7 @@ export function PriceLines({
         </span>
       </div>
       {dueNow > 0 && payment && (
-        <div className="flex items-baseline justify-between rounded-[12px] bg-primary-50 px-3 py-2 text-primary-700">
+        <div className="flex items-baseline justify-between border-t border-slate-900/[0.07] pt-2.5 text-ink-1">
           <span className="font-semibold tracking-tight">
             ชำระตอนนี้ ({paymentModeLabel(payment.mode, payment.depositPercent)})
           </span>
@@ -863,11 +820,10 @@ function RoomDetails({
           <h3 className="text-[15px] font-bold tracking-tight">สิ่งอำนวยความสะดวก</h3>
           <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
             {room.amenities.map((a) => {
-              const Icon = amenityIcon(a);
               return (
                 <div key={a} className="flex items-center gap-2.5 text-[13px] text-ink-2">
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-slate-50 text-ink-1">
-                    <Icon size={16} strokeWidth={1.75} />
+                  <span className="shrink-0 text-ink-1">
+                    <AmenityIcon label={a} />
                   </span>
                   <span className="leading-snug">{a}</span>
                 </div>
@@ -883,9 +839,9 @@ function RoomDetails({
                 {room.perks.map((p) => (
                   <span
                     key={p}
-                    className="inline-flex items-center gap-1.5 rounded-pill bg-emerald-50 px-2.5 py-1 text-[12px] font-medium text-emerald-700"
+                    className="rounded-pill border border-slate-900/[0.08] px-2.5 py-1 text-[12px] font-medium text-ink-2"
                   >
-                    <CircleCheck size={13} strokeWidth={2} /> {p}
+                    {p}
                   </span>
                 ))}
               </div>
@@ -919,7 +875,7 @@ function RoomDetails({
             ? [
                 ["เลือกเวลาและกรอกข้อมูล", "ห้องจะถูกกันไว้ให้คุณทันทีหลังกดยืนยัน"],
                 [
-                  `โอน${paymentModeLabel(payment.mode, payment.depositPercent)}และแนบสลิป`,
+                  `โอน${paymentModeLabel(payment.mode, payment.depositPercent)} และแนบสลิป`,
                   "ระบบตรวจสลิปกับธนาคารและยืนยันการจองให้ทันที",
                 ],
                 ["เข้าใช้ห้องได้เลย", "รับใบยืนยันทาง LINE · มาถึงก่อนเวลาเล็กน้อย"],
@@ -960,13 +916,13 @@ function ContactCard({ config }: { config: FlowConfig }) {
           rel="noreferrer"
           className="inline-flex h-12 items-center justify-center gap-1.5 rounded-pill bg-[#06C755] text-[14px] font-semibold text-white"
         >
-          <MessageCircle size={16} strokeWidth={2} /> LINE
+          LINE
         </a>
         <a
           href={`tel:${config.phone.replace(/[^0-9+]/g, "")}`}
           className="inline-flex h-12 items-center justify-center gap-1.5 rounded-pill bg-ink-1 text-[14px] font-semibold text-white"
         >
-          <Phone size={16} strokeWidth={2} /> โทร
+          โทร
         </a>
       </div>
     </section>
@@ -992,7 +948,7 @@ function OtherRooms({
           href={`/rooms?src=${channel}`}
           className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-primary-600"
         >
-          ดูทั้งหมด <ChevronRight size={14} strokeWidth={2} />
+          ดูทั้งหมด
         </Link>
       </div>
       <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2 scrollbar-none sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0">
@@ -1019,13 +975,13 @@ function OtherRooms({
                 <span
                   className={cn(
                     "absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-pill bg-white/90 px-2.5 py-1 text-[11px] font-semibold backdrop-blur",
-                    st.tone === "free" ? "text-emerald-700" : st.tone === "busy" ? "text-amber-700" : "text-ink-2",
+                    "text-ink-1",
                   )}
                 >
                   <span
                     className={cn(
                       "h-1.5 w-1.5 rounded-full",
-                      st.tone === "free" ? "bg-emerald-500" : st.tone === "busy" ? "bg-amber-500" : "bg-slate-400",
+                      st.tone === "free" ? "bg-emerald-500" : "bg-slate-400",
                     )}
                   />
                   {st.label}
@@ -1040,7 +996,7 @@ function OtherRooms({
                   </p>
                 </div>
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-50 text-ink-1 transition group-hover:bg-primary-600 group-hover:text-white">
-                  <ArrowUpRight size={16} strokeWidth={1.75} />
+                  <ArrowUpRight size={16} weight="light" />
                 </span>
               </div>
             </Link>

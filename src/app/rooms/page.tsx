@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, Building2, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
   bkkToday,
@@ -59,9 +58,7 @@ export default async function PublicRoomsIndex({
       <PublicTopBar channel={channel} right={<LiveBadge />} />
 
       <section className="mx-auto max-w-6xl px-4 pt-8 sm:px-6 sm:pt-12">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary-600">
-          EasySpace Meeting Rooms
-        </p>
+        <p className="text-[12px] font-medium tracking-tight text-ink-3">EasySpace · Meeting Rooms</p>
         <h1 className="mt-2 max-w-xl text-[30px] font-bold leading-[1.1] tracking-tightest sm:text-[44px]">
           ห้องประชุมพร้อมใช้
           <br className="hidden sm:block" /> จองออนไลน์ได้ในหนึ่งนาที
@@ -104,32 +101,23 @@ export default async function PublicRoomsIndex({
                   className="relative aspect-[16/10] overflow-hidden"
                   style={{ background: `linear-gradient(135deg, ${room.color}, ${room.color}B3)` }}
                 >
-                  {room.thumbnail_url ? (
+                  {room.thumbnail_url && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={room.thumbnail_url}
                       alt={room.name}
-                      className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.04]"
+                      className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.03]"
                     />
-                  ) : (
-                    <div className="grid h-full place-items-center text-white/60">
-                      <Building2 size={44} strokeWidth={1.25} />
-                    </div>
                   )}
                   <span
                     className={cn(
-                      "absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-pill bg-white/90 px-2.5 py-1 text-[11.5px] font-semibold backdrop-blur",
-                      status.tone === "free" && "text-emerald-700",
-                      status.tone === "busy" && "text-amber-700",
-                      status.tone === "closed" && "text-ink-2",
+                      "absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-pill bg-white px-2.5 py-1 text-[11.5px] font-semibold text-ink-1",
                     )}
                   >
                     <span
                       className={cn(
                         "h-1.5 w-1.5 rounded-full",
-                        status.tone === "free" && "bg-emerald-500",
-                        status.tone === "busy" && "bg-amber-500",
-                        status.tone === "closed" && "bg-slate-400",
+                        status.tone === "free" ? "bg-emerald-500" : "bg-slate-400",
                       )}
                     />
                     {status.label}
@@ -148,14 +136,11 @@ export default async function PublicRoomsIndex({
                   </div>
                   <div className="flex items-center justify-between text-[12.5px] text-ink-2">
                     {config.show_capacity && room.capacity_max ? (
-                      <span className="inline-flex items-center gap-1.5 tabular-nums">
-                        <Users size={15} strokeWidth={1.75} className="text-ink-3" />
-                        {room.capacity_min ?? 1}–{room.capacity_max} ท่าน
-                      </span>
+                      <span className="tabular-nums">รองรับ {room.capacity_min ?? 1}–{room.capacity_max} ท่าน</span>
                     ) : (
                       <span />
                     )}
-                    <span className="font-medium tabular-nums text-emerald-700">
+                    <span className="font-medium tabular-nums text-ink-1">
                       {free > 0 ? `วันนี้ว่าง ${durationLabel(free)}` : "วันนี้เต็มแล้ว"}
                     </span>
                   </div>
@@ -164,8 +149,8 @@ export default async function PublicRoomsIndex({
 
                   <div className="mt-4 flex items-center justify-between">
                     <span className="text-[12px] text-ink-3">{status.sub}</span>
-                    <span className="inline-flex h-9 items-center gap-1 rounded-pill bg-ink-1 px-4 text-[13px] font-semibold text-white transition group-hover:bg-primary-600">
-                      เลือกเวลา <ArrowRight size={14} strokeWidth={2} />
+                    <span className="inline-flex h-9 items-center rounded-pill bg-ink-1 px-4 text-[13px] font-semibold text-white transition group-hover:bg-slate-800">
+                      เลือกเวลา
                     </span>
                   </div>
                 </div>
@@ -198,10 +183,10 @@ function DayBar({
 
   return (
     <div className="mt-3">
-      <div className="relative h-2 overflow-hidden rounded-full bg-emerald-100">
+      <div className="relative h-1.5 overflow-hidden rounded-full bg-slate-100">
         {nowT > open && (
           <span
-            className="absolute inset-y-0 left-0 bg-slate-200"
+            className="absolute inset-y-0 left-0 bg-slate-200/70"
             style={{ width: pct(Math.min(nowT, close)) }}
           />
         )}
@@ -212,7 +197,7 @@ function DayBar({
           return (
             <span
               key={i}
-              className="absolute inset-y-0 bg-slate-400/80"
+              className="absolute inset-y-0 bg-ink-1/70"
               style={{ left: pct(s), width: `calc(${pct(e)} - ${pct(s)})` }}
             />
           );

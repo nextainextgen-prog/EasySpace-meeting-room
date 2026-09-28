@@ -3,15 +3,8 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  CalendarPlus,
-  Check,
-  Loader2,
-  MessageCircle,
-  Phone,
-  X,
-} from "lucide-react";
+import { ArrowLeft, Check } from "@phosphor-icons/react";
+import { Spinner } from "../../_components/spinner";
 import { cn } from "@/lib/cn";
 import { bkkDate, bkkDateLabel, bkkTime } from "@/lib/time/bkk";
 import {
@@ -30,9 +23,9 @@ import type { PublicPaymentInfo } from "@/lib/public-booking/payment";
 
 const STATUS: Record<
   string,
-  { label: string; tone: "amber" | "emerald" | "blue" | "slate" | "rose"; sub: string }
+  { label: string; tone: "pending" | "emerald" | "blue" | "slate" | "rose"; sub: string }
 > = {
-  pending: { label: "รอยืนยัน", tone: "amber", sub: "ห้องถูกกันไว้ให้คุณแล้ว ทีมงานจะติดต่อกลับเพื่อยืนยัน" },
+  pending: { label: "รอยืนยัน", tone: "pending", sub: "ห้องถูกกันไว้ให้คุณแล้ว ทีมงานจะติดต่อกลับเพื่อยืนยัน" },
   confirmed: { label: "ยืนยันแล้ว", tone: "emerald", sub: "การจองของคุณได้รับการยืนยันเรียบร้อย พบกันตามเวลานัด" },
   in_use: { label: "กำลังใช้งาน", tone: "blue", sub: "ขอให้การประชุมเป็นไปอย่างราบรื่น" },
   completed: { label: "เสร็จสิ้น", tone: "slate", sub: "ขอบคุณที่ใช้บริการ EasySpace" },
@@ -41,11 +34,11 @@ const STATUS: Record<
 };
 
 const TONE = {
-  amber: "bg-amber-50 text-amber-700 ring-amber-200 [--dot:theme(colors.amber.500)]",
-  emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200 [--dot:theme(colors.emerald.500)]",
-  blue: "bg-primary-50 text-primary-700 ring-primary-200 [--dot:theme(colors.primary.600)]",
-  slate: "bg-slate-100 text-ink-2 ring-slate-200 [--dot:theme(colors.slate.400)]",
-  rose: "bg-rose-50 text-rose-700 ring-rose-200 [--dot:theme(colors.rose.500)]",
+  pending: "text-ink-1 ring-slate-900/[0.1] [--dot:theme(colors.slate.400)]",
+  emerald: "text-ink-1 ring-slate-900/[0.1] [--dot:theme(colors.emerald.500)]",
+  blue: "text-ink-1 ring-slate-900/[0.1] [--dot:theme(colors.emerald.500)]",
+  slate: "text-ink-2 ring-slate-900/[0.1] [--dot:theme(colors.slate.300)]",
+  rose: "text-ink-2 ring-slate-900/[0.1] [--dot:theme(colors.rose.500)]",
 };
 
 export function BookingStatus({
@@ -67,7 +60,7 @@ export function BookingStatus({
   const [pending, startTransition] = useTransition();
   const awaitingPayment = view.dueNow > 0 && view.status === "pending";
   const st = awaitingPayment
-    ? { label: "รอชำระเงิน", tone: "amber" as const, sub: "ห้องถูกกันไว้ให้คุณแล้ว ชำระเงินและแนบสลิปเพื่อยืนยันการจอง" }
+    ? { label: "รอชำระเงิน", tone: "pending" as const, sub: "ห้องถูกกันไว้ให้คุณแล้ว ชำระเงินและแนบสลิปเพื่อยืนยันการจอง" }
     : (STATUS[view.status] ?? STATUS.pending);
   const minutes = Math.round(
     (new Date(view.endsAt).getTime() - new Date(view.startsAt).getTime()) / 60_000,
@@ -107,7 +100,7 @@ export function BookingStatus({
         href={view.roomSlug ? `/rooms/${view.roomSlug}?src=${channel}` : `/rooms?src=${channel}`}
         className="inline-flex items-center gap-1.5 text-[13px] font-medium text-ink-2 hover:text-ink-1"
       >
-        <ArrowLeft size={16} strokeWidth={1.75} /> กลับไปหน้าห้อง
+        <ArrowLeft size={16} weight="light" /> กลับไปหน้าห้อง
       </Link>
 
       <div className="mt-4 flex items-start justify-between gap-3">
@@ -138,17 +131,17 @@ export function BookingStatus({
                 <span
                   className={cn(
                     "grid h-7 w-7 place-items-center rounded-full text-[12px] font-bold",
-                    s.done ? "bg-emerald-500 text-white" : "bg-white text-ink-3 ring-1 ring-slate-900/10",
+                    s.done ? "bg-ink-1 text-white" : "bg-white text-ink-3 ring-1 ring-slate-900/10",
                   )}
                 >
-                  {s.done ? <Check size={14} strokeWidth={2.5} /> : i + 1}
+                  {s.done ? <Check size={13} weight="bold" /> : i + 1}
                 </span>
                 <span className={cn("whitespace-nowrap text-[11.5px] font-medium", s.done ? "text-ink-1" : "text-ink-3")}>
                   {s.title}
                 </span>
               </div>
               {i < steps.length - 1 && (
-                <span className={cn("mx-2 mb-5 h-px flex-1", steps[i + 1].done ? "bg-emerald-400" : "bg-slate-900/10")} />
+                <span className={cn("mx-2 mb-5 h-px flex-1", steps[i + 1].done ? "bg-ink-1" : "bg-slate-900/10")} />
               )}
             </div>
           ))}
@@ -209,7 +202,7 @@ export function BookingStatus({
           </Row>
         </dl>
         {view.status === "pending" && view.holdExpiresAt && !awaitingPayment && (
-          <p className="border-t border-slate-900/[0.06] bg-amber-50/50 px-5 py-3 text-[12.5px] text-amber-800">
+          <p className="border-t border-slate-900/[0.06] px-5 py-3 text-[12.5px] text-ink-2">
             กันห้องไว้ให้ถึง {bkkDateLabel(view.holdExpiresAt)} {bkkTime(view.holdExpiresAt)} น. — {config.confirm_message}
           </p>
         )}
@@ -232,7 +225,7 @@ export function BookingStatus({
             }
             className="inline-flex h-12 items-center justify-center gap-1.5 rounded-pill border border-slate-900/[0.1] bg-white text-[14px] font-semibold hover:bg-slate-50"
           >
-            <CalendarPlus size={16} strokeWidth={1.75} /> ลงปฏิทิน
+            เพิ่มลงปฏิทิน
           </button>
         )}
         <a
@@ -244,13 +237,13 @@ export function BookingStatus({
             !active && "col-span-2",
           )}
         >
-          <MessageCircle size={16} strokeWidth={2} /> แชท LINE
+          แชท LINE
         </a>
         <a
           href={`tel:${config.phone.replace(/[^0-9+]/g, "")}`}
           className="col-span-2 inline-flex h-12 items-center justify-center gap-1.5 rounded-pill bg-ink-1 text-[14px] font-semibold text-white hover:bg-slate-800"
         >
-          <Phone size={16} strokeWidth={1.75} /> โทร {config.phone}
+          โทร {config.phone}
         </a>
       </div>
 
@@ -275,7 +268,7 @@ export function BookingStatus({
                   onClick={cancel}
                   className="inline-flex h-11 items-center justify-center gap-1.5 rounded-pill bg-rose-600 text-[13.5px] font-semibold text-white disabled:opacity-70"
                 >
-                  {pending ? <Loader2 size={16} className="animate-spin" /> : <X size={16} strokeWidth={2} />}
+                  {pending && <Spinner />}
                   ยกเลิกการจอง
                 </button>
               </div>

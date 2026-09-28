@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Ticket } from "lucide-react";
+import { ArrowUpRight } from "@phosphor-icons/react";
 import { bkkDate, bkkTime } from "@/lib/time/bkk";
 import { thaiDateShort } from "@/lib/public-booking/shared";
 
@@ -71,11 +71,8 @@ export function MyBookingsStrip({ channel }: { channel: string }) {
           <Link
             key={b.reference}
             href={`/rooms/booking/${b.reference}?t=${b.token}&src=${channel}`}
-            className="group flex min-w-[240px] snap-start items-center gap-3 rounded-card-sm border border-slate-900/[0.07] bg-white px-3.5 py-3 shadow-card transition hover:border-primary-600/30"
+            className="group flex min-w-[240px] snap-start items-center gap-3 rounded-card-sm border border-slate-900/[0.07] bg-white px-3.5 py-3 shadow-card transition hover:border-slate-900/20"
           >
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-primary-50 text-primary-600">
-              <Ticket size={18} strokeWidth={1.75} />
-            </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] font-semibold tracking-tight">
                 {b.roomName}
@@ -84,11 +81,7 @@ export function MyBookingsStrip({ channel }: { channel: string }) {
                 {thaiDateShort(bkkDate(b.startsAt))} · {bkkTime(b.startsAt)}–{bkkTime(b.endsAt)}
               </span>
             </span>
-            <ArrowUpRight
-              size={16}
-              strokeWidth={1.75}
-              className="shrink-0 text-ink-3 transition group-hover:text-primary-600"
-            />
+            <ArrowUpRight size={16} weight="light" className="shrink-0 text-ink-3 transition group-hover:text-ink-1" />
           </Link>
         ))}
       </div>

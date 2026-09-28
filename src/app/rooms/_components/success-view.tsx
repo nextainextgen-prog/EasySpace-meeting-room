@@ -2,15 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowUpRight,
-  CalendarPlus,
-  Check,
-  Copy,
-  MessageCircle,
-  Phone,
-  Timer,
-} from "lucide-react";
+import { Check, Copy } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { bkkDate, bkkDateLabel, bkkTime } from "@/lib/time/bkk";
 import {
@@ -86,20 +78,14 @@ export function SuccessView({
 
   return (
     <div className="mx-auto max-w-lg px-4 pb-16 pt-8 sm:pt-12">
-      <div className="text-center">
-        {awaitingPayment ? (
-          <div className="es-pop mx-auto grid h-[72px] w-[72px] place-items-center rounded-full bg-gradient-to-br from-amber-300 to-amber-500 text-white shadow-[0_14px_30px_-10px_rgba(245,158,11,0.6)] ring-8 ring-amber-500/10">
-            <Timer size={32} strokeWidth={2.25} />
-          </div>
-        ) : (
-          <div className="es-pop mx-auto grid h-[72px] w-[72px] place-items-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-[0_14px_30px_-10px_rgba(16,185,129,0.65)] ring-8 ring-emerald-500/10">
-            <Check size={34} strokeWidth={2.5} />
-          </div>
-        )}
-        <h1 className="es-rise mt-5 text-[26px] font-bold tracking-tightest">
+      <div>
+        <p className="es-rise text-[12px] font-medium tracking-tight text-ink-3 tabular-nums">
+          {success.reference} · {awaitingPayment ? "รอชำระเงิน" : paid ? "ยืนยันแล้ว" : "รอยืนยัน"}
+        </p>
+        <h1 className="es-rise mt-1 text-[28px] font-bold leading-tight tracking-tightest">
           {awaitingPayment ? "กันห้องไว้ให้คุณแล้ว" : paid ? "การจองสำเร็จ" : "จองห้องเรียบร้อย"}
         </h1>
-        <p className="es-rise mx-auto mt-1.5 max-w-sm text-[14px] leading-relaxed text-ink-2">
+        <p className="es-rise mt-2 max-w-md text-[14px] leading-relaxed text-ink-2">
           {awaitingPayment
             ? "ชำระเงินและแนบสลิปภายในเวลาที่กำหนด ระบบจะยืนยันการจองให้ทันที"
             : paid
@@ -182,21 +168,14 @@ export function SuccessView({
             >
               {success.reference}
               <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-100 text-ink-2">
-                {copied ? <Check size={14} strokeWidth={2.25} /> : <Copy size={14} strokeWidth={1.75} />}
+                {copied ? <Check size={14} weight="bold" /> : <Copy size={14} weight="light" />}
               </span>
             </button>
           </div>
-          {paid ? (
-            <span className="inline-flex items-center gap-1.5 rounded-pill bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              {PAYMENT_STATUS_LABEL[paid.paymentStatus] ?? "ยืนยันแล้ว"}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-pill bg-amber-50 px-3 py-1.5 text-[12px] font-semibold text-amber-700 ring-1 ring-amber-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              {awaitingPayment ? "รอชำระเงิน" : "รอยืนยัน"}
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1.5 rounded-pill border border-slate-900/[0.1] px-3 py-1.5 text-[12px] font-semibold text-ink-1">
+            <span className={cn("h-1.5 w-1.5 rounded-full", paid ? "bg-emerald-500" : "bg-slate-400")} />
+            {paid ? (PAYMENT_STATUS_LABEL[paid.paymentStatus] ?? "ยืนยันแล้ว") : awaitingPayment ? "รอชำระเงิน" : "รอยืนยัน"}
+          </span>
         </div>
       </div>
 
@@ -231,10 +210,10 @@ export function SuccessView({
             <span
               className={cn(
                 "relative grid h-7 w-7 shrink-0 place-items-center rounded-full text-[12px] font-bold",
-                s.done ? "bg-emerald-500 text-white" : "bg-white text-ink-3 ring-1 ring-slate-900/10",
+                s.done ? "bg-ink-1 text-white" : "bg-white text-ink-3 ring-1 ring-slate-900/10",
               )}
             >
-              {s.done ? <Check size={14} strokeWidth={2.5} /> : i + 1}
+              {s.done ? <Check size={13} weight="bold" /> : i + 1}
             </span>
             <span className="pt-0.5">
               <span className="block text-[14px] font-semibold tracking-tight">{s.title}</span>
@@ -260,7 +239,7 @@ export function SuccessView({
           }
           className="inline-flex h-12 items-center justify-center gap-1.5 rounded-pill border border-slate-900/[0.1] bg-white text-[14px] font-semibold tracking-tight hover:bg-slate-50"
         >
-          <CalendarPlus size={16} strokeWidth={1.75} /> ลงปฏิทิน
+          เพิ่มลงปฏิทิน
         </button>
         <a
           href={config.line_url}
@@ -268,20 +247,19 @@ export function SuccessView({
           rel="noreferrer"
           className="inline-flex h-12 items-center justify-center gap-1.5 rounded-pill bg-[#06C755] text-[14px] font-semibold tracking-tight text-white hover:brightness-95"
         >
-          <MessageCircle size={16} strokeWidth={2} /> แชท LINE
+          แชท LINE
         </a>
         <Link
           href={statusHref}
           className="col-span-2 inline-flex h-12 items-center justify-center gap-1.5 rounded-pill bg-ink-1 text-[14px] font-semibold tracking-tight text-white hover:bg-slate-800"
         >
-          ดูสถานะการจอง <ArrowUpRight size={16} strokeWidth={1.75} />
+          ดูสถานะการจอง
         </Link>
       </div>
 
       <p className="mt-5 text-center text-[12px] leading-relaxed text-ink-3">
         บันทึกหน้าสถานะไว้เพื่อตรวจสอบหรือยกเลิกการจอง · สอบถาม{" "}
-        <a href={`tel:${config.phone.replace(/[^0-9+]/g, "")}`} className="inline-flex items-center gap-1 font-medium text-ink-2 underline-offset-2 hover:underline">
-          <Phone size={12} strokeWidth={1.75} />
+        <a href={`tel:${config.phone.replace(/[^0-9+]/g, "")}`} className="font-medium text-ink-2 underline-offset-2 hover:underline">
           {config.phone}
         </a>
       </p>

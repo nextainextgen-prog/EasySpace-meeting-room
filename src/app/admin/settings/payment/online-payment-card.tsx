@@ -1,14 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  KeyRound,
-  PlugZap,
-  Save,
-  ShieldCheck,
-} from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Label, Select } from "@/components/ui/input";
@@ -104,16 +97,14 @@ export function OnlinePaymentCard({ config: initial, promptpayId: initialPp, eas
       </div>
 
       {!ready && missing.length > 0 && (
-        <div className="mb-3 rounded-input border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
-          <p className="mb-1 inline-flex items-center gap-1 font-semibold">
-            <AlertTriangle size={12} /> ยังเปิดรับชำระออนไลน์ไม่ได้
-          </p>
+        <div className="mb-3 border-l-2 border-ink-1 pl-3 text-xs text-ink-1">
+          <p className="mb-1 font-semibold">ยังเปิดรับชำระออนไลน์ไม่ได้</p>
           <ul className="list-inside list-disc space-y-0.5">
             {missing.map((m) => (
               <li key={m}>{m}</li>
             ))}
           </ul>
-          <p className="mt-1 text-amber-700">ระหว่างนี้ลูกค้ายังจองได้ตามปกติ (ทีมงานโทรยืนยัน)</p>
+          <p className="mt-1 text-ink-3">ระหว่างนี้ลูกค้ายังจองได้ตามปกติ (ทีมงานโทรยืนยัน)</p>
         </div>
       )}
 
@@ -206,7 +197,7 @@ export function OnlinePaymentCard({ config: initial, promptpayId: initialPp, eas
         </div>
 
         <div className="flex justify-end">
-          <Button size="sm" iconLeft={<Save size={12} />} onClick={saveAll} disabled={pending}>
+          <Button size="sm" onClick={saveAll} disabled={pending}>
             บันทึกการตั้งค่าการชำระ
           </Button>
         </div>
@@ -214,12 +205,8 @@ export function OnlinePaymentCard({ config: initial, promptpayId: initialPp, eas
         {/* EasySlip key */}
         <div className="rounded-input border border-line bg-surface-subtle/60 p-3">
           <div className="mb-2 flex items-center justify-between">
-            <p className="inline-flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-              <KeyRound size={14} className="text-ink-3" /> EasySlip API key
-            </p>
-            <span className="inline-flex items-center gap-1 text-[11px] text-ink-3">
-              <ShieldCheck size={12} /> เก็บฝั่งเซิร์ฟเวอร์ ไม่แสดงต่อสาธารณะ
-            </span>
+            <p className="text-sm font-semibold tracking-tight">EasySlip API key</p>
+            <span className="text-[11px] text-ink-3">เก็บฝั่งเซิร์ฟเวอร์ ไม่แสดงต่อสาธารณะ</span>
           </div>
           {easyslip.source === "env" ? (
             <p className="text-xs text-ink-2">
@@ -251,7 +238,7 @@ export function OnlinePaymentCard({ config: initial, promptpayId: initialPp, eas
             </>
           )}
           <div className="mt-2 flex items-center gap-2">
-            <Button size="sm" variant="secondary" iconLeft={<PlugZap size={12} />} onClick={test} disabled={pending}>
+            <Button size="sm" variant="secondary" onClick={test} disabled={pending}>
               ทดสอบเชื่อมต่อ / ดูโควตา
             </Button>
             {quota && <span className="text-xs text-emerald-700">{quota}</span>}
@@ -259,14 +246,7 @@ export function OnlinePaymentCard({ config: initial, promptpayId: initialPp, eas
         </div>
 
         {msg && (
-          <p
-            className={cn(
-              "inline-flex items-center gap-1 text-xs",
-              msg.tone === "ok" ? "text-emerald-700" : "text-red-600",
-            )}
-          >
-            {msg.tone === "ok" ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />} {msg.text}
-          </p>
+          <p className={cn("text-xs", msg.tone === "ok" ? "text-emerald-700" : "text-red-600")}>{msg.text}</p>
         )}
       </div>
     </Card>
