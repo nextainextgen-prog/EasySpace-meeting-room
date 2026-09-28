@@ -203,11 +203,45 @@ export async function bookingStatsForDay(date: Date) {
   };
 }
 
+/**
+ * Next free booking code: one past the highest BK number ever issued.
+ *
+ * It used to be "row count + 1", which re-issues an existing code as soon as
+ * any booking is deleted (the unique constraint then rejects the insert).
+ */
 export async function generateBookingCode() {
   const supabase = createSupabaseAdminClient();
-  const { count } = await supabase
-    .from("bookings")
-    .select("*", { count: "exact", head: true });
-  const n = (count ?? 0) + 1;
-  return `BK${String(n).padStart(5, "0")}`;
+  const [byCode, byTime] = await Promise.all([
+    // Fixed-width codes sort correctly as text…
+    supabase
+      .from("bookings")
+      .select("reference_code")
+      .like("reference_code", "BK%")
+      .order("reference_code", { ascending: false })
+      .limit(20),
+    // …and the newest rows catch any code that outgrew the width.
+    supabase
+      .from("bookings")
+      .select("reference_code")
+      .like("reference_code", "BK%")
+      .order("created_at", { ascending: false })
+      .limit(20),
+  ]);
+  let max = 0;
+  for (const r of [...(byCode.data ?? []), ...(byTime.data ?? [])] as Array<{ reference_code: string }>) {
+    const m = /^BK(\d+)$/.exec(r.reference_code);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  let n = max + 1;
+  // Belt and braces: never hand out a code that already exists.
+  for (let i = 0; i < 20; i++) {
+    const code = `BK${String(n).padStart(5, "0")}`;
+    const { count } = await supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("reference_code", code);
+    if (!count) return code;
+    n++;
+  }
+  return `BK${Date.now().toString().slice(-8)}`;
 }
