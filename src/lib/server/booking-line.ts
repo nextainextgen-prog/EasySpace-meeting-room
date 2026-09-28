@@ -36,6 +36,12 @@ interface BookingForLine {
       company?: string | null;
       line?: PublicLineLink;
       payment?: { due?: number };
+      stage?: string;
+      pricing?: {
+        preVat: number; vat: number; vatRate: number; vatEnabled: boolean;
+        grandTotal: number; wht: number; whtRate: number; netPayable: number;
+      };
+      quote?: { number: string; validUntil: string };
     };
   } | null;
   room: { name: string; thumbnail_url: string | null } | null;
@@ -58,6 +64,9 @@ function kindFor(b: BookingForLine): BookingFlexKind {
   if (b.booking_status === "confirmed" || b.booking_status === "in_use" || b.booking_status === "completed") {
     return "confirmed";
   }
+  const stage = b.metadata?.public?.stage;
+  if (stage === "requested") return "requested";
+  if (stage === "quoted") return "quoted";
   return "received";
 }
 
@@ -89,7 +98,13 @@ export async function sendBookingLine(
       totalAmount: total,
       paidAmount: paid,
       dueNow: k === "received" && due > 0 ? due : null,
-      manualDue: k === "received" && due === 0 ? amountDueNow(total - paid, cfg.payment_mode, cfg.deposit_percent) : null,
+      manualDue:
+        k === "received" && due === 0
+          ? amountDueNow(Number(b.metadata?.public?.pricing?.netPayable ?? total) - paid, cfg.payment_mode, cfg.deposit_percent)
+          : null,
+      money: b.metadata?.public?.pricing ?? null,
+      quoteNumber: b.metadata?.public?.quote?.number ?? null,
+      validUntil: k === "quoted" ? (b.metadata?.public?.quote?.validUntil ?? null) : null,
       manualLabel: paymentModeLabel(cfg.payment_mode, cfg.deposit_percent),
       dueBy: k === "received" ? b.hold_expires_at : null,
       paymentLabel: PAYMENT_STATUS_LABEL[b.payment_status] ?? null,

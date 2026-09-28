@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Minus, Plus } from "@phosphor-icons/react";
+import { ArrowUpRight, CalendarBlank, CaretLeft, CaretRight, Minus, Plus } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { addDays, bkkParts, fromBkk, timeToMinutes } from "@/lib/time/bkk";
 import {
@@ -14,6 +14,7 @@ import {
   maxRunFrom,
   minutesToTime,
   publicRoomStatus,
+  freeMinutesOn,
   publicStartTimes,
   quotePublic,
   slotState,
@@ -30,6 +31,10 @@ import {
   type PublicPaymentInfo,
 } from "@/lib/public-booking/payment";
 import { AmenityIcon } from "./amenity-icon";
+import { PriceSummary } from "./price-summary";
+import { estimatePrice, thb, type PriceBreakdown, type PricingConfig } from "@/lib/public-booking/pricing";
+
+const PUBLIC_OPEN_TIME_FALLBACK = "08:30";
 import { DetailsSheet } from "./details-sheet";
 import { SuccessView, type BookingSuccess } from "./success-view";
 
@@ -61,6 +66,7 @@ export interface FlowConfig {
   confirm_message: string;
   show_capacity: boolean;
   show_hourly_rate: boolean;
+  pricing: PricingConfig;
 }
 
 export interface OtherRoomCard {
@@ -168,6 +174,16 @@ export function BookingFlow({
       }
     : null;
   const quote = quotePublic(room.hourly_rate, packages, duration);
+  const estimate = estimatePrice({
+    hourlyRate: room.hourly_rate,
+    packages,
+    startTime: start ?? PUBLIC_OPEN_TIME_FALLBACK,
+    minutes: duration,
+    cfg: config.pricing,
+    withholding: false,
+  });
+  const quoteFlow = config.pricing.quote_required;
+  const ctaLabel = quoteFlow ? "ส่งคำขอจอง" : "จองห้องนี้";
 
   function pickDate(d: string) {
     setDate(d);
@@ -277,7 +293,9 @@ export function BookingFlow({
                     date={date}
                     selection={selection}
                     duration={duration}
-                    quote={quote}
+                    estimate={estimate}
+                    quoteFlow={quoteFlow}
+                    ctaLabel={ctaLabel}
                     payment={payment}
                     onContinue={() => setSheetOpen(true)}
                   />
@@ -302,7 +320,7 @@ export function BookingFlow({
                       {thaiDateShort(date)} · {selection.start}–{selection.end} น.
                     </p>
                     <p className="text-[19px] font-bold leading-tight tracking-tighter tabular-nums">
-                      ฿{formatBahtPlain(quote.total)}
+                      {thb(estimate.grandTotal)}
                       <span className="ml-1.5 text-[12px] font-medium tracking-tight text-ink-3">
                         {durationLabel(duration)}
                       </span>
@@ -321,7 +339,7 @@ export function BookingFlow({
                 onClick={() => setSheetOpen(true)}
                 className="inline-flex h-12 shrink-0 items-center rounded-pill bg-ink-1 px-7 text-[15px] font-semibold tracking-tight text-white transition active:scale-[0.98] disabled:bg-slate-200 disabled:text-ink-3"
               >
-                จองห้องนี้
+                {ctaLabel}
               </button>
             </div>
           </div>
@@ -335,6 +353,8 @@ export function BookingFlow({
           selection={selection}
           duration={duration}
           quote={quote}
+          packages={packages}
+          pricingCfg={config.pricing}
           channel={channel}
           payment={payment}
           onClose={() => setSheetOpen(false)}
@@ -483,6 +503,7 @@ interface PickerProps {
 
 function PickerCard(p: PickerProps) {
   const stripRef = useRef<HTMLDivElement>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   useEffect(() => {
     const el = stripRef.current?.querySelector<HTMLElement>(`[data-date="${p.date}"]`);
     el?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
@@ -523,10 +544,30 @@ function PickerCard(p: PickerProps) {
           </p>
           <h2 className="mt-0.5 text-[19px] font-bold tracking-tighter">เลือกวันและเวลา</h2>
         </div>
-        <p className="pb-0.5 text-[12px] font-medium text-ink-3 tabular-nums">
-          {chip.monthLong} {chip.yearBE}
-        </p>
+        <button
+          type="button"
+          onClick={() => setCalendarOpen((o) => !o)}
+          aria-expanded={calendarOpen}
+          className="inline-flex items-center gap-1.5 rounded-pill border border-slate-900/[0.1] px-3 py-1.5 text-[12px] font-semibold text-ink-1 hover:border-slate-900/25"
+        >
+          <CalendarBlank size={14} weight="light" />
+          {calendarOpen ? "ซ่อนปฏิทิน" : "ดูปฏิทินวันว่าง"}
+        </button>
       </div>
+
+      {calendarOpen && (
+        <MonthCalendar
+          days={p.days}
+          date={p.date}
+          busy={p.busy}
+          now={p.now}
+          minDur={p.minDur}
+          onPick={(d) => {
+            p.pickDate(d);
+            setCalendarOpen(false);
+          }}
+        />
+      )}
 
       {/* Dates */}
       <div
@@ -695,6 +736,102 @@ function PickerCard(p: PickerProps) {
   );
 }
 
+/** Month view of which days still have a bookable slot. */
+function MonthCalendar({
+  days,
+  date,
+  busy,
+  now,
+  minDur,
+  onPick,
+}: {
+  days: string[];
+  date: string;
+  busy: PublicBusyBlock[];
+  now: Date;
+  minDur: number;
+  onPick: (d: string) => void;
+}) {
+  const inRange = new Set(days);
+  const months = Array.from(new Set(days.map((d) => d.slice(0, 7))));
+  const [mi, setMi] = useState(Math.max(0, months.indexOf(date.slice(0, 7))));
+  const month = months[mi];
+  const [y, m] = month.split("-").map(Number);
+  const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const count = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const cells: Array<string | null> = [
+    ...Array.from({ length: first }, () => null),
+    ...Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`),
+  ];
+  const starts = publicStartTimes();
+  const state = (d: string) => {
+    if (!inRange.has(d)) return "out";
+    const free = freeMinutesOn(d, busy, now);
+    if (!starts.some((t) => maxRunFrom(d, t, busy, now) >= minDur)) return "full";
+    return free >= 6 * 60 ? "open" : "few";
+  };
+  const c = dateChip(`${month}-01`);
+
+  return (
+    <div className="mt-4 rounded-[18px] border border-slate-900/[0.08] p-3">
+      <div className="flex items-center justify-between">
+        <button type="button" aria-label="เดือนก่อน" disabled={mi === 0} onClick={() => setMi(mi - 1)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-slate-100 disabled:opacity-30">
+          <CaretLeft size={16} weight="light" />
+        </button>
+        <p className="text-[14px] font-semibold tracking-tight">
+          {c.monthLong} {c.yearBE}
+        </p>
+        <button type="button" aria-label="เดือนถัดไป" disabled={mi >= months.length - 1} onClick={() => setMi(mi + 1)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-slate-100 disabled:opacity-30">
+          <CaretRight size={16} weight="light" />
+        </button>
+      </div>
+      <div className="mt-2 grid grid-cols-7 text-center text-[11px] text-ink-3">
+        {["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"].map((d) => (
+          <span key={d} className="py-1">{d}</span>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((d, i) => {
+          if (!d) return <span key={`b${i}`} />;
+          const st = state(d);
+          const selected = d === date;
+          return (
+            <button
+              key={d}
+              type="button"
+              disabled={st === "out" || st === "full"}
+              onClick={() => onPick(d)}
+              className={cn(
+                "flex h-11 flex-col items-center justify-center rounded-[12px] text-[13.5px] font-semibold tabular-nums transition",
+                selected && "bg-ink-1 text-white",
+                !selected && st === "open" && "text-ink-1 hover:bg-slate-100",
+                !selected && st === "few" && "text-ink-1 hover:bg-slate-100",
+                st === "full" && "text-ink-3 line-through decoration-ink-3/50",
+                st === "out" && "text-ink-3/40",
+              )}
+            >
+              {Number(d.slice(8))}
+              <span
+                className={cn(
+                  "mt-0.5 h-1 w-1 rounded-full",
+                  st === "open" && (selected ? "bg-white" : "bg-emerald-500"),
+                  st === "few" && (selected ? "bg-white" : "bg-slate-400"),
+                  (st === "full" || st === "out") && "bg-transparent",
+                )}
+              />
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 px-1 text-[11px] text-ink-3">
+        <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> ว่างมาก</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> ว่างบางช่วง</span>
+        <span className="line-through">เต็ม</span>
+      </div>
+    </div>
+  );
+}
+
 function StepButton({
   children,
   disabled,
@@ -735,7 +872,9 @@ function SummaryCard({
   date,
   selection,
   duration,
-  quote,
+  estimate,
+  quoteFlow,
+  ctaLabel,
   payment,
   onContinue,
 }: {
@@ -743,7 +882,9 @@ function SummaryCard({
   date: string;
   selection: { start: string; end: string } | null;
   duration: number;
-  quote: ReturnType<typeof quotePublic>;
+  estimate: PriceBreakdown;
+  quoteFlow: boolean;
+  ctaLabel: string;
   payment: PublicPaymentInfo;
   onContinue: () => void;
 }) {
@@ -756,7 +897,13 @@ function SummaryCard({
               {thaiDateShort(date)} · {selection.start}–{selection.end} น.
             </span>
           </div>
-          <PriceLines room={room} duration={duration} quote={quote} payment={payment} />
+          <PriceSummary
+            className="mt-3"
+            p={estimate}
+            estimate={quoteFlow}
+            dueNow={!quoteFlow && payment.ready ? amountDueNow(estimate.netPayable, payment.mode, payment.depositPercent) : null}
+            dueLabel={`ชำระตอนนี้ (${paymentModeLabel(payment.mode, payment.depositPercent)})`}
+          />
         </>
       ) : (
         <p className="text-[13px] text-ink-3">เลือกวันและเวลาเพื่อดูราคา</p>
@@ -767,61 +914,16 @@ function SummaryCard({
         onClick={onContinue}
         className="mt-4 inline-flex h-12 w-full items-center justify-center rounded-pill bg-ink-1 text-[15px] font-semibold tracking-tight text-white transition hover:bg-slate-800 active:scale-[0.99] disabled:bg-slate-200 disabled:text-ink-3"
       >
-        จองห้องนี้
+        {ctaLabel}
       </button>
       <p className="mt-3 text-center text-[11.5px] text-ink-3">
-        {payment.ready
+        {quoteFlow
+          ? "ยังไม่มีการชำระเงิน · แอดมินตรวจสอบและส่งใบเสนอราคาให้ก่อน"
+          : payment.ready
           ? `${paymentModeLabel(payment.mode, payment.depositPercent)} ออนไลน์ · ยืนยันการจองทันทีเมื่อสลิปผ่าน`
           : "จองแล้วโอนและส่งสลิปให้แอดมินทาง LINE เพื่อยืนยัน"}
       </p>
     </section>
-  );
-}
-
-export function PriceLines({
-  room,
-  duration,
-  quote,
-  payment,
-}: {
-  room: { hourly_rate: number };
-  duration: number;
-  quote: ReturnType<typeof quotePublic>;
-  payment?: PublicPaymentInfo;
-}) {
-  const dueNow =
-    payment?.ready ? amountDueNow(quote.total, payment.mode, payment.depositPercent) : 0;
-  return (
-    <div className="mt-3 space-y-2 text-[13.5px]">
-      <div className="flex justify-between text-ink-2 tabular-nums">
-        <span>
-          ฿{formatBahtPlain(room.hourly_rate)} × {durationLabel(duration)}
-        </span>
-        <span className={cn(quote.packageName && "text-ink-3 line-through")}>
-          ฿{formatBahtPlain(quote.hourlyTotal)}
-        </span>
-      </div>
-      {quote.packageName && (
-        <div className="flex justify-between text-emerald-700 tabular-nums">
-          <span>แพ็กเกจ {quote.packageName}</span>
-          <span>ประหยัด ฿{formatBahtPlain(quote.saving)}</span>
-        </div>
-      )}
-      <div className="flex items-baseline justify-between border-t border-dashed border-slate-900/10 pt-2.5">
-        <span className="font-semibold tracking-tight">ราคารวม</span>
-        <span className="text-[22px] font-bold tracking-tighter tabular-nums">
-          ฿{formatBahtPlain(quote.total)}
-        </span>
-      </div>
-      {dueNow > 0 && payment && (
-        <div className="flex items-baseline justify-between border-t border-slate-900/[0.07] pt-2.5 text-ink-1">
-          <span className="font-semibold tracking-tight">
-            ชำระตอนนี้ ({paymentModeLabel(payment.mode, payment.depositPercent)})
-          </span>
-          <span className="text-[16px] font-bold tabular-nums">฿{formatBahtPlain(dueNow)}</span>
-        </div>
-      )}
-    </div>
   );
 }
 

@@ -14,6 +14,8 @@ import {
 import { downloadIcs } from "./ics";
 import { saveBooking } from "./my-bookings";
 import { PaymentPanel, type SlipOutcome } from "./payment-panel";
+import { PriceSummary } from "./price-summary";
+import type { PriceBreakdown } from "@/lib/public-booking/pricing";
 import { LineLink } from "./line-link";
 import { SendSlipPopup, lineChatLink, slipMessage } from "./send-slip-popup";
 import {
@@ -35,6 +37,8 @@ export interface BookingSuccess {
   amountDue: number;
   paymentMode: PaymentMode | null;
   lineLinked: boolean;
+  stage?: "requested" | "direct";
+  pricing?: PriceBreakdown;
 }
 
 export function SuccessView({
@@ -56,7 +60,8 @@ export function SuccessView({
   const [paid, setPaid] = useState<SlipOutcome | null>(null);
   const awaitingPayment = success.amountDue > 0 && !paid;
   // Admin-confirms mode: the customer sends the slip to the OA chat instead.
-  const manual = success.amountDue === 0;
+  const requested = success.stage === "requested";
+  const manual = success.amountDue === 0 && !requested;
   const [slipOpen, setSlipOpen] = useState(manual);
   const handoff = {
     reference: success.reference,
@@ -92,13 +97,15 @@ export function SuccessView({
     <div className="mx-auto max-w-lg px-4 pb-16 pt-8 sm:pt-12">
       <div>
         <p className="es-rise text-[12px] font-medium tracking-tight text-ink-3 tabular-nums">
-          {success.reference} · {awaitingPayment ? "รอชำระเงิน" : paid ? "ยืนยันแล้ว" : "รอยืนยัน"}
+          {success.reference} · {requested ? "รอใบเสนอราคา" : awaitingPayment ? "รอชำระเงิน" : paid ? "ยืนยันแล้ว" : "รอยืนยัน"}
         </p>
         <h1 className="es-rise mt-1 text-[28px] font-bold leading-tight tracking-tightest">
-          {awaitingPayment ? "กันห้องไว้ให้คุณแล้ว" : paid ? "การจองสำเร็จ" : "จองห้องเรียบร้อย"}
+          {requested ? "ส่งคำขอจองแล้ว" : awaitingPayment ? "กันห้องไว้ให้คุณแล้ว" : paid ? "การจองสำเร็จ" : "จองห้องเรียบร้อย"}
         </h1>
         <p className="es-rise mt-2 max-w-md text-[14px] leading-relaxed text-ink-2">
-          {awaitingPayment
+          {requested
+            ? `เรากันห้องไว้ให้แล้ว แอดมินกำลังตรวจสอบและจะส่งใบเสนอราคาให้ภายใน ${bkkDateLabel(success.holdExpiresAt)} ${bkkTime(success.holdExpiresAt)} น. ${success.lineLinked ? "ทางแชท LINE และหน้านี้" : "ที่หน้าสถานะการจอง"}`
+            : awaitingPayment
             ? "ชำระเงินและแนบสลิปภายในเวลาที่กำหนด ระบบจะยืนยันการจองให้ทันที"
             : paid
               ? `ได้รับชำระ ฿${formatBahtPlain(paid.amount)} แล้ว ห้องพร้อมสำหรับคุณตามเวลานัด`
@@ -153,7 +160,7 @@ export function SuccessView({
           </TicketRow>
           <TicketRow label="ระยะเวลา">{durationLabel(minutes)}</TicketRow>
           <TicketRow label="ผู้เข้าร่วม">{success.attendees} ท่าน</TicketRow>
-          <TicketRow label="ราคารวม">
+          <TicketRow label={requested ? "ราคาประเมิน" : "ราคารวม"}>
             ฿{formatBahtPlain(success.totalAmount)}
             {success.packageName && (
               <span className="ml-1 text-[11.5px] font-medium text-emerald-700">
@@ -186,14 +193,28 @@ export function SuccessView({
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-pill border border-slate-900/[0.1] px-3 py-1.5 text-[12px] font-semibold text-ink-1">
             <span className={cn("h-1.5 w-1.5 rounded-full", paid ? "bg-emerald-500" : "bg-slate-400")} />
-            {paid ? (PAYMENT_STATUS_LABEL[paid.paymentStatus] ?? "ยืนยันแล้ว") : awaitingPayment ? "รอชำระเงิน" : "รอยืนยัน"}
+            {paid ? (PAYMENT_STATUS_LABEL[paid.paymentStatus] ?? "ยืนยันแล้ว") : requested ? "รอใบเสนอราคา" : awaitingPayment ? "รอชำระเงิน" : "รอยืนยัน"}
           </span>
         </div>
       </div>
 
+      {requested && success.pricing && (
+        <div className="es-rise mt-5 rounded-[24px] border border-slate-900/[0.08] bg-white p-5">
+          <p className="text-[13px] font-semibold tracking-tight">ราคาประเมินเบื้องต้น</p>
+          <PriceSummary className="mt-3" p={success.pricing} estimate />
+        </div>
+      )}
+
       {/* Progress */}
       <ol className="es-rise mt-6 space-y-0">
-        {(success.amountDue > 0
+        {(requested
+          ? [
+              { title: "ส่งคำขอจองแล้ว", sub: "ห้องถูกกันไว้ให้คุณระหว่างรอใบเสนอราคา", done: true },
+              { title: "แอดมินออกใบเสนอราคา", sub: "ตรวจสอบห้อง ราคา และข้อมูลออกเอกสาร", done: false },
+              { title: "ยืนยันใบเสนอราคาและชำระเงิน", sub: "กดยืนยันในหน้าสถานะการจอง แล้วชำระตามช่องทางที่แจ้ง", done: false },
+              { title: "ยืนยันการจอง", sub: "ได้รับใบยืนยันและเข้าใช้ห้องตามเวลานัด", done: false },
+            ]
+          : success.amountDue > 0
           ? [
               { title: "จองห้องแล้ว", sub: "ห้องถูกกันไว้ให้คุณเรียบร้อย", done: true },
               {

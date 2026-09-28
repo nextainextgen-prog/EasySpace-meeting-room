@@ -21,7 +21,7 @@ export default async function RoomsLayout({
 }) {
   const { liff_id } = await getPublicRoomConfig();
   return (
-    <div className="min-h-dvh bg-[#F6F7FB] text-ink-1">
+    <div className="min-h-dvh bg-[#F6F7FB] text-ink-1 print:bg-white">
       <LiffProvider liffId={liff_id}>{children}</LiffProvider>
     </div>
   );

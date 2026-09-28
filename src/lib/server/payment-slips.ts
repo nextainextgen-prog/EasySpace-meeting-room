@@ -223,19 +223,29 @@ export async function submitSlip(opts: {
   bytes: ArrayBuffer;
   mime: string;
   filename: string;
+  /** Tests only: evaluate against this config instead of the live one. */
+  cfg?: PublicRoomConfig;
 }): Promise<SlipSubmitResult> {
-  const setup = await getPaymentSetup();
+  const booking = await loadBooking(opts.reference, opts.token);
+  if (!booking) return { ok: false, status: "not_found", message: "ไม่พบการจอง" };
+  const stageEarly = (booking.metadata?.public as { stage?: string } | undefined)?.stage;
+  if (stageEarly === "requested" || stageEarly === "quoted") {
+    return { ok: false, status: "closed", message: "กรุณารอใบเสนอราคาและกดยืนยันก่อนชำระเงิน" };
+  }
+  const setup = await getPaymentSetup(opts.cfg);
   if (!setup.ready) {
     return { ok: false, status: "not_ready", message: "ระบบชำระเงินออนไลน์ยังไม่พร้อม กรุณาติดต่อทีมงาน" };
   }
-  const booking = await loadBooking(opts.reference, opts.token);
-  if (!booking) return { ok: false, status: "not_found", message: "ไม่พบการจอง" };
   if (!["pending", "confirmed"].includes(booking.booking_status)) {
     return {
       ok: false,
       status: "closed",
       message: "การจองนี้ถูกยกเลิกหรือหมดเวลาชำระแล้ว หากโอนเงินไปแล้วกรุณาติดต่อทีมงานทาง LINE",
     };
+  }
+  const stage = (booking.metadata?.public as { stage?: string } | undefined)?.stage;
+  if (stage === "requested" || stage === "quoted") {
+    return { ok: false, status: "closed", message: "กรุณารอใบเสนอราคาและกดยืนยันก่อนชำระเงิน" };
   }
   const outstanding = outstandingOnline(booking);
   if (outstanding <= 0) return { ok: false, status: "paid", message: "การจองนี้ชำระเงินเรียบร้อยแล้ว" };
@@ -422,7 +432,13 @@ export async function applyPayment(opts: {
   };
 
   const newPaid = Number(b.paid_amount) + opts.amount;
-  const paymentStatus = newPaid + 0.009 >= Number(b.total_amount) ? "paid" : "deposit";
+  // With withholding tax the customer legitimately transfers less than the
+  // invoice total — "paid in full" is measured against what they owe us.
+  const payable = Number(
+    (b.metadata as { public?: { pricing?: { netPayable?: number } } } | null)?.public?.pricing?.netPayable ??
+      b.total_amount,
+  );
+  const paymentStatus = newPaid + 0.009 >= payable ? "paid" : "deposit";
 
   await admin.from("booking_payments").insert({
     booking_id: b.id,

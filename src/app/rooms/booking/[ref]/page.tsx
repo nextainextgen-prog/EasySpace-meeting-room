@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getPublicRoomConfig } from "@/lib/data/public-rooms";
+import { getCompanyProfile, getPublicRoomConfig } from "@/lib/data/public-rooms";
 import { getPublicBookingView } from "@/lib/server/public-booking";
 import { getPublicPaymentInfo } from "@/lib/server/payment-slips";
 import { getPublicLineContact } from "@/lib/server/booking-line";
@@ -28,7 +28,7 @@ export default async function PublicBookingStatusPage({
     getPublicRoomConfig(),
     getPublicPaymentInfo(),
   ]);
-  const contact = await getPublicLineContact(config);
+  const [contact, company] = await Promise.all([getPublicLineContact(config), getCompanyProfile()]);
 
   return (
     <>
@@ -39,6 +39,7 @@ export default async function PublicBookingStatusPage({
           token={t ?? ""}
           channel={channel}
           payment={payment}
+          company={company}
           config={{
             line_url: contact.line_url,
             line_id: contact.line_id,

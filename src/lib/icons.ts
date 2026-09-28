@@ -1,4 +1,5 @@
 import {
+  Inbox,
   ArrowLeftRight,
   ReceiptText,
   LayoutDashboard,
@@ -52,6 +53,7 @@ export const navIcons = {
   account: UserCircle,
   slips: ReceiptText,
   overrides: ArrowLeftRight,
+  requests: Inbox,
 } as const satisfies Record<string, LucideIcon>;
 
 export function paymentStatusIcon(status: PaymentStatus): LucideIcon {

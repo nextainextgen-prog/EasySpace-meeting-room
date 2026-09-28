@@ -82,6 +82,7 @@ export default async function PublicRoomPage({ params, searchParams }: PageProps
           confirm_message: config.confirm_message,
           show_capacity: config.show_capacity,
           show_hourly_rate: config.show_hourly_rate,
+          pricing: config.pricing,
         }}
         otherRooms={others.map((r) => ({
           id: r.id,

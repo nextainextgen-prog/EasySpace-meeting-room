@@ -178,7 +178,7 @@ async function main() {
 
   const today = bkkParts(new Date()).date;
   const cfg = await getPublicRoomConfig();
-  const fullCfg = { ...cfg, enabled: true, booking_enabled: true, allow_override_internal: true, auto_relocate_internal: true, booking_days_ahead: 30, min_duration_minutes: 60, max_duration_minutes: 480 };
+  const fullCfg = { ...cfg, enabled: true, booking_enabled: true, allow_override_internal: true, auto_relocate_internal: true, booking_days_ahead: 30, min_duration_minutes: 60, max_duration_minutes: 480, pricing: { ...cfg.pricing, quote_required: false, ot_enabled: false } };
   CFG = fullCfg;
 
   await purge();

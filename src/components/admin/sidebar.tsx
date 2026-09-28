@@ -27,6 +27,7 @@ const sections: NavSection[] = [
       { href: "/admin/dashboard", label: "Dashboard", icon: "dashboard" },
       { href: "/admin/calendar", label: "ปฏิทินการจอง", icon: "calendar" },
       { href: "/admin/bookings", label: "ลงข้อมูลการจอง", icon: "bookings" },
+      { href: "/admin/requests", label: "คำขอจองออนไลน์", icon: "requests" },
       { href: "/admin/overrides", label: "คิวทับซ้อน", icon: "overrides" },
     ],
   },

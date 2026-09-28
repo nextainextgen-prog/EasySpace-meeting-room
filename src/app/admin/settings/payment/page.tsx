@@ -5,6 +5,7 @@ import { JsonSettingEditor } from "../_json-editor";
 import { getSettingValue } from "@/lib/actions/settings";
 import { BankAccountsManager } from "./bank-accounts-manager";
 import { OnlinePaymentCard } from "./online-payment-card";
+import { PricingCard } from "./pricing-card";
 import { getPublicRoomConfig } from "@/lib/data/public-rooms";
 import { getPaymentSetup } from "@/lib/server/payment-slips";
 import { getIntegrationStatus } from "@/lib/actions/online-payment";
@@ -53,6 +54,7 @@ export default async function PaymentSettingsPage() {
               missing={setup.missing}
               ready={setup.ready}
             />
+            <PricingCard initial={cfg.pricing} />
             <BankAccountsManager banks={banks} />
             <JsonSettingEditor
               settingKey="finance.payment_methods"

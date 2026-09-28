@@ -19,7 +19,10 @@ import { downloadIcs } from "../../_components/ics";
 import { forgetBooking } from "../../_components/my-bookings";
 import { PaymentPanel } from "../../_components/payment-panel";
 import { LineLink } from "../../_components/line-link";
-import { SendSlipCard } from "../../_components/send-slip-popup";
+import { SendSlipCard, lineChatLink } from "../../_components/send-slip-popup";
+import { PriceSummary } from "../../_components/price-summary";
+import { QuotationDoc, type CompanyProfile } from "../../_components/quotation-doc";
+import { acceptQuote } from "@/lib/actions/public-booking";
 import type { PublicPaymentInfo } from "@/lib/public-booking/payment";
 
 const STATUS: Record<
@@ -48,11 +51,13 @@ export function BookingStatus({
   channel,
   config,
   payment,
+  company,
 }: {
   view: PublicBookingView;
   token: string;
   channel: PublicChannel;
   payment: PublicPaymentInfo;
+  company: CompanyProfile;
   config: { line_url: string; line_id: string; line_oa_id?: string | null; phone: string; confirm_message: string };
 }) {
   const router = useRouter();
@@ -60,26 +65,54 @@ export function BookingStatus({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const awaitingPayment = view.dueNow > 0 && view.status === "pending";
-  const st = awaitingPayment
-    ? { label: "รอชำระเงิน", tone: "pending" as const, sub: "ห้องถูกกันไว้ให้คุณแล้ว ชำระเงินและแนบสลิปเพื่อยืนยันการจอง" }
-    : (STATUS[view.status] ?? STATUS.pending);
+  const quoteFlow = view.stage === "requested" || view.stage === "quoted" || view.stage === "accepted";
+  const isPending = view.status === "pending";
+  const st =
+    isPending && view.stage === "requested"
+      ? { label: "รอใบเสนอราคา", tone: "pending" as const, sub: "เรากันห้องไว้ให้แล้ว แอดมินกำลังตรวจสอบและจะส่งใบเสนอราคาให้ที่หน้านี้และทาง LINE" }
+      : isPending && view.stage === "quoted"
+        ? { label: "รอยืนยันใบเสนอราคา", tone: "pending" as const, sub: "ตรวจสอบใบเสนอราคาด้านล่าง แล้วกดยืนยันเพื่อไปขั้นตอนชำระเงิน" }
+        : awaitingPayment
+          ? { label: "รอชำระเงิน", tone: "pending" as const, sub: "ห้องถูกกันไว้ให้คุณแล้ว ชำระเงินและแนบสลิปเพื่อยืนยันการจอง" }
+          : isPending && view.stage === "accepted"
+            ? { label: "รอชำระเงิน", tone: "pending" as const, sub: "ยืนยันใบเสนอราคาแล้ว โอนเงินและส่งสลิปให้แอดมินทาง LINE เพื่อยืนยันการจอง" }
+          : (STATUS[view.status] ?? STATUS.pending);
+  const [accepting, startAccept] = useTransition();
+  const [acceptError, setAcceptError] = useState<string | null>(null);
+  const netPayable = view.pricing?.netPayable ?? view.totalAmount;
+  const chatUrl = lineChatLink(
+    config.line_oa_id ?? null,
+    config.line_url,
+    `ขอแก้ไขใบเสนอราคา ${view.quote?.number ?? view.reference}`,
+  );
+
+  function accept() {
+    setAcceptError(null);
+    startAccept(async () => {
+      const r = await acceptQuote(view.reference, token);
+      if (!r.ok) return setAcceptError(r.message ?? "ยืนยันไม่สำเร็จ");
+      router.refresh();
+    });
+  }
   const minutes = Math.round(
     (new Date(view.endsAt).getTime() - new Date(view.startsAt).getTime()) / 60_000,
   );
   const upcoming = new Date(view.endsAt).getTime() > Date.now();
   const active = ["pending", "confirmed"].includes(view.status) && upcoming;
 
-  const steps = [
-    { title: "ส่งคำขอจอง", done: true },
-    {
-      title: view.paymentMode ? "ชำระเงิน" : "ทีมงานยืนยัน",
-      done: ["confirmed", "in_use", "completed"].includes(view.status),
-    },
-    {
-      title: "เข้าใช้ห้อง",
-      done: ["in_use", "completed"].includes(view.status),
-    },
-  ];
+  const confirmed = ["confirmed", "in_use", "completed"].includes(view.status);
+  const steps = quoteFlow
+    ? [
+        { title: "ส่งคำขอ", done: true },
+        { title: "ใบเสนอราคา", done: view.stage !== "requested" || confirmed },
+        { title: "ยืนยัน/ชำระ", done: view.stage === "accepted" || confirmed },
+        { title: "ยืนยันการจอง", done: confirmed },
+      ]
+    : [
+        { title: "ส่งคำขอจอง", done: true },
+        { title: view.paymentMode ? "ชำระเงิน" : "ทีมงานยืนยัน", done: confirmed },
+        { title: "เข้าใช้ห้อง", done: ["in_use", "completed"].includes(view.status) },
+      ];
 
   function cancel() {
     setError(null);
@@ -149,13 +182,69 @@ export function BookingStatus({
         </div>
       )}
 
+      {isPending && view.stage === "requested" && view.pricing && (
+        <div className="mt-6 rounded-[24px] border border-slate-900/[0.08] bg-white p-5">
+          <p className="text-[13px] font-semibold tracking-tight">ราคาประเมินเบื้องต้น</p>
+          <PriceSummary className="mt-3" p={view.pricing} estimate />
+        </div>
+      )}
+
+      {view.quote && view.stage !== "requested" && (
+        <div className="mt-6 space-y-3">
+          <QuotationDoc
+            quote={view.quote}
+            company={company}
+            customer={{ name: view.customerName, phone: view.customerPhone, email: view.customerEmail }}
+            doc={view.doc}
+            booking={{
+              reference: view.reference,
+              roomName: view.roomName,
+              startsAt: view.startsAt,
+              endsAt: view.endsAt,
+              attendees: view.attendees,
+            }}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+            <a
+              href={`/rooms/quote/${view.reference}?t=${token}`}
+              target="_blank"
+              rel="noreferrer"
+              className="font-semibold text-ink-1 underline underline-offset-4"
+            >
+              พิมพ์ / บันทึกเป็น PDF
+            </a>
+            {isPending && view.stage === "quoted" && (
+              <a href={chatUrl} target="_blank" rel="noreferrer" className="text-ink-2 underline underline-offset-4">
+                ขอแก้ไขใบเสนอราคา
+              </a>
+            )}
+          </div>
+          {isPending && view.stage === "quoted" && (
+            <>
+              {acceptError && <p className="border-l-2 border-rose-600 pl-3 text-[13px] text-rose-700">{acceptError}</p>}
+              <button
+                type="button"
+                disabled={accepting}
+                onClick={accept}
+                className="inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-pill bg-ink-1 text-[16px] font-semibold tracking-tight text-white hover:bg-slate-800 disabled:opacity-70"
+              >
+                {accepting && <Spinner />} ยืนยันใบเสนอราคาและไปชำระเงิน
+              </button>
+              <p className="text-center text-[12px] text-ink-3">
+                ยืนราคาถึง {bkkDateLabel(view.quote.validUntil)} {bkkTime(view.quote.validUntil)} น.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
       {view.dueNow > 0 && payment.ready && (
         <div className="mt-6">
           <PaymentPanel
             reference={view.reference}
             token={token}
             dueNow={view.dueNow}
-            totalAmount={view.totalAmount}
+            totalAmount={netPayable}
             deadline={view.status === "pending" ? view.holdExpiresAt : null}
             mode={view.paymentMode}
             payment={payment}
@@ -164,7 +253,11 @@ export function BookingStatus({
         </div>
       )}
 
-      {view.status === "pending" && view.dueNow === 0 && !view.paymentMode && view.paidAmount === 0 && (
+      {view.status === "pending" &&
+        view.dueNow === 0 &&
+        !view.paymentMode &&
+        view.paidAmount === 0 &&
+        (view.stage === "accepted" || view.stage === "direct") && (
         <div className="mt-6">
           <SendSlipCard
             booking={{
@@ -172,7 +265,7 @@ export function BookingStatus({
               roomName: view.roomName,
               startsAt: view.startsAt,
               endsAt: view.endsAt,
-              totalAmount: view.totalAmount,
+              totalAmount: netPayable,
               holdExpiresAt: view.holdExpiresAt,
             }}
             payment={payment}

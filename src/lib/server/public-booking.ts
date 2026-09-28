@@ -45,6 +45,7 @@ import {
 import { computeHoldExpiry, DEFAULT_HOLD_EXPIRY_DAYS } from "@/lib/booking-hold";
 import { getPaymentSetup, outstandingOnline } from "@/lib/server/payment-slips";
 import { amountDueNow } from "@/lib/public-booking/payment";
+import { estimatePrice, type PriceBreakdown } from "@/lib/public-booking/pricing";
 import {
   linkLineToBooking,
   sendBookingLine,
@@ -96,6 +97,11 @@ export interface PublicMeta {
   displaced: DisplacedRecord[];
   /** Online payment terms fixed at booking time. */
   payment?: { mode: "deposit" | "full"; percent: number; due: number };
+  /** requested → quoted → accepted (quotation flow) · direct = pay/confirm without a quote. */
+  stage?: "requested" | "quoted" | "accepted" | "direct";
+  pricing?: PriceBreakdown;
+  doc?: PublicDocInfo | null;
+  quote?: PublicQuotation;
   line?: PublicLineLink;
 }
 
@@ -390,7 +396,7 @@ export async function expireLapsedHolds(roomId?: string): Promise<number> {
   const admin = createSupabaseAdminClient();
   let q = admin
     .from("bookings")
-    .select("id, reference_code, starts_at, ends_at, room:rooms(name), customer:customers(display_name)")
+    .select("id, reference_code, starts_at, ends_at, metadata, room:rooms(name), customer:customers(display_name)")
     .eq("booking_status", "pending")
     .not("metadata->public", "is", null)
     .lte("hold_expires_at", new Date().toISOString());
@@ -401,6 +407,7 @@ export async function expireLapsedHolds(roomId?: string): Promise<number> {
     reference_code: string;
     starts_at: string;
     ends_at: string;
+    metadata: { public?: { stage?: string } } | null;
     room: { name: string } | null;
     customer: { display_name: string } | null;
   }>;
@@ -411,7 +418,12 @@ export async function expireLapsedHolds(roomId?: string): Promise<number> {
       .update({
         booking_status: "cancelled",
         cancelled_at: new Date().toISOString(),
-        cancelled_reason: "ไม่ได้ชำระเงินภายในเวลาที่กำหนด — ปล่อยห้องคืนอัตโนมัติ",
+        cancelled_reason:
+          r.metadata?.public?.stage === "requested"
+            ? "คำขอหมดอายุก่อนออกใบเสนอราคา — ปล่อยห้องคืนอัตโนมัติ กรุณาส่งคำขอใหม่หรือติดต่อแอดมิน"
+            : r.metadata?.public?.stage === "quoted"
+              ? "ใบเสนอราคาหมดอายุโดยยังไม่ได้ยืนยัน — ปล่อยห้องคืนอัตโนมัติ"
+              : "ไม่ได้ชำระเงินภายในเวลาที่กำหนด — ปล่อยห้องคืนอัตโนมัติ",
         hold_expires_at: null,
       } as never)
       .eq("id", r.id)
@@ -459,6 +471,28 @@ export interface PublicBookingInput {
   ip: string | null;
   /** LIFF access token when the customer booked from inside LINE. */
   lineAccessToken?: string | null;
+  /** Details for the quotation / tax invoice. */
+  doc?: PublicDocInfo | null;
+}
+
+export interface PublicDocInfo {
+  company: string | null;
+  taxId: string | null;
+  branch: string | null;
+  address: string | null;
+  withholding: boolean;
+}
+
+export interface PublicQuotation {
+  number: string;
+  revision: number;
+  lines: Array<{ label: string; qty: number; unitPrice: number; amount: number }>;
+  breakdown: PriceBreakdown;
+  note: string | null;
+  validUntil: string;
+  issuedAt: string;
+  issuedBy: string;
+  acceptedAt?: string | null;
 }
 
 export type PublicBookingResult =
@@ -472,6 +506,8 @@ export type PublicBookingResult =
       totalAmount: number;
       packageName: string | null;
       holdExpiresAt: string;
+      stage: "requested" | "direct";
+      pricing: PriceBreakdown;
       /** Amount to transfer now; 0 when online payment is off. */
       amountDue: number;
       paymentMode: "deposit" | "full" | null;
@@ -657,26 +693,45 @@ export async function createPublicBooking(
     type: input.company ? "company" : "individual",
     source: input.channel === "line" ? "line" : "walk_in",
   });
-  if (input.company) {
+  if (input.company || input.doc?.company) {
     await admin
       .from("customers")
-      .update({ company_name: input.company } as never)
+      .update({ company_name: input.doc?.company || input.company } as never)
       .eq("id", customerId)
       .is("company_name", null);
+  }
+  if (input.doc?.taxId || input.doc?.address) {
+    await admin
+      .from("customers")
+      .update({
+        ...(input.doc.taxId ? { tax_id: input.doc.taxId } : {}),
+        ...(input.doc.address ? { billing_address: input.doc.address } : {}),
+      } as never)
+      .eq("id", customerId);
   }
 
   // ── Price ──
   const packages = (await listPublicPackages([room.id])).get(room.id) ?? [];
   const quote = quotePublic(Number(room.hourly_rate), packages, input.durationMinutes);
+  const doc = input.doc ?? null;
+  const pricing = estimatePrice({
+    hourlyRate: Number(room.hourly_rate),
+    packages,
+    startTime: input.startTime,
+    minutes: input.durationMinutes,
+    cfg: cfg.pricing,
+    withholding: Boolean(doc?.withholding && doc.taxId),
+  });
+  const quoteFlow = cfg.pricing.quote_required;
   const payment = await getPaymentSetup(cfg);
-  const amountDue = payment.ready ? amountDueNow(quote.total, payment.mode, payment.depositPercent) : 0;
-  // With online payment the room is held only long enough to pay for it;
-  // otherwise the team has the usual ติดจอง grace period to confirm by phone.
-  const holdExpiresAt =
-    amountDue > 0
-      ? new Date(
-          Math.min(now.getTime() + payment.holdMinutes * 60_000, new Date(startsAt).getTime()),
-        ).toISOString()
+  // Quotation flow: nothing is paid at request time — the team quotes first.
+  const amountDue =
+    !quoteFlow && payment.ready ? amountDueNow(pricing.netPayable, payment.mode, payment.depositPercent) : 0;
+  const startMs = new Date(startsAt).getTime();
+  const holdExpiresAt = quoteFlow
+    ? new Date(Math.min(now.getTime() + cfg.pricing.request_hold_hours * 3_600_000, startMs)).toISOString()
+    : amountDue > 0
+      ? new Date(Math.min(now.getTime() + payment.holdMinutes * 60_000, startMs)).toISOString()
       : computeHoldExpiry(startsAt, await resolveHoldDays());
   const token = randomBytes(18).toString("base64url");
 
@@ -685,8 +740,11 @@ export async function createPublicBooking(
     token,
     ip: input.ip,
     phone: input.phone,
-    company: input.company ?? null,
+    company: input.company ?? doc?.company ?? null,
     displaced,
+    stage: quoteFlow ? "requested" : "direct",
+    pricing,
+    doc,
     ...(amountDue > 0
       ? { payment: { mode: payment.mode, percent: payment.depositPercent, due: amountDue } }
       : {}),
@@ -708,10 +766,10 @@ export async function createPublicBooking(
       ends_at: endsAt,
       attendees_count: input.attendees ?? null,
       package_id: quote.packageId,
-      base_amount: quote.total,
-      addons_amount: 0,
+      base_amount: pricing.lines[0]?.amount ?? quote.total,
+      addons_amount: pricing.lines.slice(1).reduce((sum, l) => sum + l.amount, 0),
       discount_amount: 0,
-      total_amount: quote.total,
+      total_amount: pricing.grandTotal,
       deposit_amount: 0,
       paid_amount: 0,
       payment_status: "unpaid",
@@ -779,15 +837,18 @@ export async function createPublicBooking(
     roomName: room.name,
     startsAt,
     endsAt,
-    totalAmount: quote.total,
+    totalAmount: pricing.grandTotal,
     packageName: quote.packageName,
     holdExpiresAt,
     displaced,
     amountDue,
     paymentMode: cfg.payment_mode,
     depositPercent: cfg.deposit_percent,
-    manualDue: amountDue > 0 ? 0 : amountDueNow(quote.total, cfg.payment_mode, cfg.deposit_percent),
+    manualDue: amountDue > 0 || quoteFlow ? 0 : amountDueNow(pricing.netPayable, cfg.payment_mode, cfg.deposit_percent),
     hourlyTotal: quote.hourlyTotal,
+    pricing,
+    doc,
+    quoteFlow,
   });
 
   // Booked from inside LINE: tie the booking to them and send the card.
@@ -804,12 +865,14 @@ export async function createPublicBooking(
     token,
     startsAt,
     endsAt,
-    totalAmount: quote.total,
+    totalAmount: pricing.grandTotal,
     packageName: quote.packageName,
     holdExpiresAt,
     amountDue,
     paymentMode: amountDue > 0 ? payment.mode : null,
     lineLinked,
+    stage: quoteFlow ? "requested" : "direct",
+    pricing,
   };
 }
 
@@ -868,6 +931,9 @@ async function notifyPublicBooking(opts: {
   depositPercent: number;
   manualDue: number;
   hourlyTotal: number;
+  pricing: PriceBreakdown;
+  doc: PublicDocInfo | null;
+  quoteFlow: boolean;
 }) {
   const { input, displaced } = opts;
   const phone = formatPhone(input.phone);
@@ -898,6 +964,10 @@ async function notifyPublicBooking(opts: {
       depositPercent: opts.depositPercent,
       manualDue: opts.manualDue,
       hourlyTotal: opts.hourlyTotal,
+      pricing: opts.pricing,
+      doc: opts.doc,
+      quoteFlow: opts.quoteFlow,
+      adminUrl: `${publicBaseUrl()}/admin/requests?focus=${opts.bookingId}`,
     }),
   );
 
@@ -905,11 +975,13 @@ async function notifyPublicBooking(opts: {
     createInAppNotification({
       level: displaced.length ? "warning" : "info",
       category: "system",
-      title: `จองออนไลน์ใหม่ ${opts.reference} — รอยืนยัน`,
+      title: opts.quoteFlow
+        ? `คำขอจองใหม่ ${opts.reference} — รอออกใบเสนอราคา`
+        : `จองออนไลน์ใหม่ ${opts.reference} — รอยืนยัน`,
       body: `${input.name} (${phone}) · ${opts.roomName} · ${when}${
         displaced.length ? ` · ทับคิวภายใน ${displaced.length} รายการ` : ""
       }`,
-      link: "/admin/calendar",
+      link: opts.quoteFlow ? `/admin/requests?focus=${opts.bookingId}` : "/admin/calendar",
       relatedId: opts.bookingId,
     }),
   ];
@@ -1013,6 +1085,12 @@ export interface PublicBookingView {
   paymentMode: "deposit" | "full" | null;
   company: string | null;
   lineLinked: boolean;
+  stage: "requested" | "quoted" | "accepted" | "direct";
+  customerPhone: string | null;
+  customerEmail: string | null;
+  pricing: PriceBreakdown | null;
+  quote: PublicQuotation | null;
+  doc: PublicDocInfo | null;
 }
 
 async function loadByToken(reference: string, token: string) {
@@ -1023,7 +1101,7 @@ async function loadByToken(reference: string, token: string) {
     .select(
       `id, reference_code, booking_status, payment_status, starts_at, ends_at,
        attendees_count, total_amount, paid_amount, hold_expires_at, cancelled_reason, metadata,
-       room:rooms(id, name, thumbnail_url, color), customer:customers(display_name)`,
+       room:rooms(id, name, thumbnail_url, color), customer:customers(display_name, phone, email)`,
     )
     .eq("reference_code", reference)
     .maybeSingle();
@@ -1041,7 +1119,7 @@ async function loadByToken(reference: string, token: string) {
     cancelled_reason: string | null;
     metadata: { public?: PublicMeta } | null;
     room: { id: string; name: string; thumbnail_url: string | null; color: string } | null;
-    customer: { display_name: string } | null;
+    customer: { display_name: string; phone?: string | null; email?: string | null } | null;
   } | null;
   if (!row?.metadata?.public?.token) return null;
   // Constant-time-ish compare is overkill for a 144-bit random token, but
@@ -1101,6 +1179,12 @@ export async function getPublicBookingView(
     paymentMode: row.metadata?.public?.payment?.mode ?? null,
     company: row.metadata?.public?.company ?? null,
     lineLinked: Boolean(row.metadata?.public?.line?.userId),
+    stage: row.metadata?.public?.stage ?? "direct",
+    customerPhone: row.customer?.phone ?? null,
+    customerEmail: row.customer?.email ?? null,
+    pricing: row.metadata?.public?.pricing ?? null,
+    quote: row.metadata?.public?.quote ?? null,
+    doc: row.metadata?.public?.doc ?? null,
   };
 }
 

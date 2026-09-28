@@ -152,6 +152,7 @@ async function main() {
     deposit_percent: 30,
     payment_hold_minutes: 60,
     liff_id: "1234567890-E2ETEST",
+    pricing: { ...base.pricing, quote_required: false, ot_enabled: false },
   };
 
   const setup = await getPaymentSetup(CFG);
@@ -193,7 +194,7 @@ async function main() {
   ok("telegram booking.public mentions transfer", sent.some((s) => s.kind === "telegram:booking.public" && String(s.payload).includes("แนบสลิป")));
 
   const up = (ref: string, token: string) =>
-    submitSlip({ reference: ref, token, bytes: PNG, mime: "image/png", filename: "slip.png" });
+    submitSlip({ reference: ref, token, bytes: PNG, mime: "image/png", filename: "slip.png", cfg: CFG });
 
   console.log("\n— slips that must NOT confirm the booking");
   sent.length = 0;

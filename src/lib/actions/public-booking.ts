@@ -15,6 +15,8 @@ import {
   createPublicBooking,
   type PublicBookingResult,
 } from "@/lib/server/public-booking";
+import { normaliseTaxId } from "@/lib/public-booking/pricing";
+import { acceptQuotation } from "@/lib/server/quotations";
 import {
   normalisePhone,
   parseChannel,
@@ -44,6 +46,16 @@ const SubmitSchema = z.object({
   attendees: z.number().int().min(1).max(500).optional(),
   note: z.string().trim().max(500).optional(),
   channel: z.string().optional(),
+  /** Quotation / tax-invoice details (all optional). */
+  doc: z
+    .object({
+      company: z.string().trim().max(200).optional(),
+      taxId: z.string().trim().max(20).optional(),
+      branch: z.string().trim().max(100).optional(),
+      address: z.string().trim().max(500).optional(),
+      withholding: z.boolean().optional(),
+    })
+    .optional(),
   /** LIFF access token — verified server-side, never trusted as-is. */
   lineAccessToken: z.string().max(2000).optional(),
   /** Honeypot — real people never see this field. */
@@ -103,6 +115,15 @@ export async function submitPublicBooking(
     channel: input.lineAccessToken ? "line" : parseChannel(input.channel),
     ip: await clientIp(),
     lineAccessToken: input.lineAccessToken || null,
+    doc: input.doc && (input.doc.company || input.doc.taxId)
+      ? {
+          company: input.doc.company || null,
+          taxId: normaliseTaxId(input.doc.taxId),
+          branch: input.doc.branch || null,
+          address: input.doc.address || null,
+          withholding: Boolean(input.doc.withholding && normaliseTaxId(input.doc.taxId)),
+        }
+      : null,
   });
 
   if (result.ok) {
@@ -146,4 +167,13 @@ export async function linkLineAccount(reference: string, token: string, accessTo
   return r.ok
     ? { ok: true as const, pushed: Boolean(r.pushed), message: r.message }
     : { ok: false as const, message: r.message ?? "เชื่อม LINE ไม่สำเร็จ" };
+}
+
+/** Customer accepts the quotation from their booking page. */
+export async function acceptQuote(reference: string, token: string) {
+  const id = await bookingIdByToken(String(reference ?? "").slice(0, 32), String(token ?? "").slice(0, 64));
+  if (!id) return { ok: false as const, message: "ไม่พบการจอง" };
+  const r = await acceptQuotation(id);
+  if (r.ok) revalidatePath("/admin/requests");
+  return r;
 }

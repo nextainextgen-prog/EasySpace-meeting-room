@@ -13,7 +13,7 @@ const MUTED = "#94A3B8";
 const BODY = "#475569";
 const BRAND = "#2D4EF5";
 
-export type BookingFlexKind = "received" | "confirmed" | "cancelled";
+export type BookingFlexKind = "requested" | "quoted" | "received" | "confirmed" | "cancelled";
 
 export interface BookingFlexInput {
   kind: BookingFlexKind;
@@ -32,6 +32,19 @@ export interface BookingFlexInput {
   /** Admin-confirms mode: what to transfer before sending the slip in chat. */
   manualDue?: number | null;
   manualLabel?: string | null;
+  /** Quotation / estimate money, when known. */
+  money?: {
+    preVat: number;
+    vat: number;
+    vatRate: number;
+    vatEnabled: boolean;
+    grandTotal: number;
+    wht: number;
+    whtRate: number;
+    netPayable: number;
+  } | null;
+  quoteNumber?: string | null;
+  validUntil?: string | null;
   paymentLabel?: string | null;
   statusUrl: string;
   note?: string | null;
@@ -98,13 +111,25 @@ export function bookingFlexMessage(b: BookingFlexInput): LineMessage {
             sub: b.note ?? "หากต้องการจองใหม่ สามารถเลือกเวลาได้จากลิงก์ด้านล่าง",
             pill: pill("ยกเลิกแล้ว", "#BE123C", "#FFE4E6"),
           }
-        : {
-            title: "ได้รับการจองแล้ว",
-            sub: b.dueNow
-              ? `กรุณาชำระ ${baht(b.dueNow)}${b.dueBy ? ` ภายใน ${bkkTime(b.dueBy)} น. (${bkkDateLabel(b.dueBy)})` : ""} เพื่อยืนยันการจอง`
-              : `กรุณาโอน${b.manualDue ? ` ${baht(b.manualDue)}${b.manualLabel ? ` (${b.manualLabel})` : ""}` : "ตามยอดที่แจ้ง"} แล้วส่งสลิปตอบกลับในแชทนี้พร้อมรหัสการจอง แอดมินจะยืนยันให้`,
-            pill: pill(b.dueNow ? "รอชำระเงิน" : "รอส่งสลิป", "#334155", "#F1F5F9"),
-          };
+        : b.kind === "requested"
+          ? {
+              title: "ได้รับคำขอจองแล้ว",
+              sub: "แอดมินกำลังตรวจสอบห้องและราคา แล้วจะส่งใบเสนอราคาให้ในแชทนี้",
+              pill: pill("รอใบเสนอราคา", "#334155", "#F1F5F9"),
+            }
+          : b.kind === "quoted"
+            ? {
+                title: `ใบเสนอราคา ${b.quoteNumber ?? ""}`.trim(),
+                sub: `กรุณาตรวจสอบและกดยืนยัน${b.validUntil ? ` ภายใน ${bkkDateLabel(b.validUntil)} ${bkkTime(b.validUntil)} น.` : ""} เพื่อชำระเงินและยืนยันการจอง`,
+                pill: pill("รอยืนยันใบเสนอราคา", "#334155", "#F1F5F9"),
+              }
+            : {
+                title: "ยืนยันใบเสนอราคาแล้ว",
+                sub: b.dueNow
+                  ? `กรุณาชำระ ${baht(b.dueNow)}${b.dueBy ? ` ภายใน ${bkkTime(b.dueBy)} น. (${bkkDateLabel(b.dueBy)})` : ""} เพื่อยืนยันการจอง`
+                  : `กรุณาโอน${b.manualDue ? ` ${baht(b.manualDue)}${b.manualLabel ? ` (${b.manualLabel})` : ""}` : "ตามยอดที่แจ้ง"} แล้วส่งสลิปตอบกลับในแชทนี้พร้อมรหัสการจอง แอดมินจะยืนยันให้`,
+                pill: pill(b.dueNow ? "รอชำระเงิน" : "รอส่งสลิป", "#334155", "#F1F5F9"),
+              };
 
   const rows = [
     row("รหัสการจอง", b.reference, { bold: true }),
@@ -126,7 +151,16 @@ export function bookingFlexMessage(b: BookingFlexInput): LineMessage {
             margin: "lg",
             spacing: "sm",
             contents: [
-              row("ยอดรวม", baht(b.totalAmount)),
+              ...(b.money && b.money.vatEnabled
+                ? [row("ก่อน VAT", baht(b.money.preVat)), row(`VAT ${b.money.vatRate}%`, baht(b.money.vat))]
+                : []),
+              row(b.money?.vatEnabled ? "ราคารวม VAT" : "ยอดรวม", baht(b.money?.grandTotal ?? b.totalAmount), { bold: b.kind === "quoted" }),
+              ...(b.money && b.money.wht > 0
+                ? [
+                    row(`หัก ณ ที่จ่าย ${b.money.whtRate}%`, `−${baht(b.money.wht)}`),
+                    row("ยอดชำระจริง", baht(b.money.netPayable), { bold: true }),
+                  ]
+                : []),
               ...(b.paidAmount > 0 ? [row("ชำระแล้ว", baht(b.paidAmount), { color: "#047857" })] : []),
               ...(b.paidAmount > 0 && remaining > 0
                 ? [row("คงเหลือชำระหน้างาน", baht(remaining), { bold: true })]
@@ -180,11 +214,13 @@ export function bookingFlexMessage(b: BookingFlexInput): LineMessage {
           action: {
             type: "uri",
             label:
-              b.kind === "received" && b.dueNow
-                ? "ชำระเงิน"
-                : b.kind === "cancelled"
-                  ? "จองใหม่"
-                  : "ดูรายละเอียดการจอง",
+              b.kind === "quoted"
+                ? "ดูและยืนยันใบเสนอราคา"
+                : b.kind === "received" && b.dueNow
+                  ? "ชำระเงิน"
+                  : b.kind === "cancelled"
+                    ? "จองใหม่"
+                    : "ดูรายละเอียดการจอง",
             uri: b.statusUrl,
           },
         },
@@ -198,7 +234,11 @@ export function bookingFlexMessage(b: BookingFlexInput): LineMessage {
       ? `การจองสำเร็จ ${b.reference}`
       : b.kind === "cancelled"
         ? `ยกเลิกการจอง ${b.reference}`
-        : `ได้รับการจอง ${b.reference}`;
+        : b.kind === "quoted"
+          ? `ใบเสนอราคา ${b.quoteNumber ?? b.reference}`
+          : b.kind === "requested"
+            ? `ได้รับคำขอจอง ${b.reference}`
+            : `ยืนยันใบเสนอราคาแล้ว ${b.reference}`;
 
   return {
     type: "flex",

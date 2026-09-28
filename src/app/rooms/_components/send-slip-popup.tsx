@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Check, Copy, X } from "@phosphor-icons/react";
 import { BankLogo, bankDisplayName } from "@/components/bank-logo";
 import { bkkDate, bkkDateLabel, bkkTime } from "@/lib/time/bkk";
-import { formatBahtPlain, thaiDateShort } from "@/lib/public-booking/shared";
+import { thaiDateShort } from "@/lib/public-booking/shared";
+import { thb } from "@/lib/public-booking/pricing";
 import {
   amountDueNow,
   paymentModeLabel,
@@ -65,10 +66,10 @@ function SlipInstructions({
             โอน{due > 0 ? (
               <>
                 {" "}
-                <b className="tabular-nums">฿{formatBahtPlain(due)}</b>{" "}
+                <b className="tabular-nums">{thb(due)}</b>{" "}
                 <span className="text-ink-3">
                   ({paymentModeLabel(payment.mode, payment.depositPercent)}
-                  {payment.mode !== "full" && due < booking.totalAmount ? ` จากยอดรวม ฿${formatBahtPlain(booking.totalAmount)}` : ""})
+                  {payment.mode !== "full" && due < booking.totalAmount ? ` จากยอดชำระ ${thb(booking.totalAmount)}` : ""})
                 </span>
               </>
             ) : (

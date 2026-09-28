@@ -947,14 +947,32 @@ export function publicBookingTemplate(opts: {
   /** Admin-confirms mode: what the customer was told to transfer before sending the slip. */
   manualDue?: number;
   hourlyTotal?: number;
+  pricing?: {
+    lines: Array<{ label: string; amount: number }>;
+    preVat: number;
+    vat: number;
+    vatRate: number;
+    vatEnabled: boolean;
+    vatInclusive: boolean;
+    grandTotal: number;
+    withholding: boolean;
+    whtRate: number;
+    wht: number;
+    netPayable: number;
+  };
+  doc?: { company: string | null; taxId: string | null; branch: string | null; address: string | null; withholding: boolean } | null;
+  quoteFlow?: boolean;
+  adminUrl?: string;
 }): string {
   const when = bkkWhen(opts.startsAt, opts.endsAt);
   const online = Boolean(opts.amountDue && opts.amountDue > 0);
   const lines: string[] = [];
   lines.push(
-    online
-      ? "🛎️ <b>จองออนไลน์ใหม่ — รอลูกค้าชำระเงิน</b>"
-      : "🛎️ <b>จองออนไลน์ใหม่ — รอลูกค้าส่งสลิปทาง LINE</b>",
+    opts.quoteFlow
+      ? "📝 <b>คำขอจองออนไลน์ใหม่ — รอออกใบเสนอราคา</b>"
+      : online
+        ? "🛎️ <b>จองออนไลน์ใหม่ — รอลูกค้าชำระเงิน</b>"
+        : "🛎️ <b>จองออนไลน์ใหม่ — รอลูกค้าส่งสลิปทาง LINE</b>",
   );
   lines.push(SEP);
   lines.push(`🎫 <b>รหัสการจอง:</b> <code>${escapeHtml(opts.reference)}</code>`);
@@ -969,6 +987,39 @@ export function publicBookingTemplate(opts: {
   if (opts.attendees) lines.push(`👥 <b>ผู้เข้าร่วม:</b> ${opts.attendees} ท่าน`);
   lines.push(`📲 <b>ช่องทาง:</b> ${escapeHtml(opts.channelLabel)}`);
   if (opts.note) lines.push(`📝 <b>หมายเหตุลูกค้า:</b> ${escapeHtml(opts.note)}`);
+
+  if (opts.doc && (opts.doc.company || opts.doc.taxId)) {
+    lines.push(SEP);
+    lines.push("🧾 <b>ข้อมูลออกเอกสาร</b>");
+    if (opts.doc.company) lines.push(`• นาม: ${escapeHtml(opts.doc.company)}${opts.doc.branch ? ` (${escapeHtml(opts.doc.branch)})` : ""}`);
+    if (opts.doc.taxId) lines.push(`• เลขผู้เสียภาษี: ${escapeHtml(opts.doc.taxId)}`);
+    if (opts.doc.address) lines.push(`• ที่อยู่: ${escapeHtml(opts.doc.address)}`);
+    lines.push(`• หัก ณ ที่จ่าย: ${opts.doc.withholding ? "ใช่" : "ไม่หัก"}`);
+  }
+
+  if (opts.quoteFlow && opts.pricing) {
+    const p = opts.pricing;
+    lines.push(SEP);
+    lines.push("💰 <b>ราคาประเมินเบื้องต้น</b> (ลูกค้าเห็นก่อนส่งคำขอ)");
+    for (const l of p.lines) lines.push(`• ${escapeHtml(l.label)}: ${formatBaht(l.amount)}`);
+    if (p.vatEnabled) {
+      lines.push(`• ก่อน VAT: ${formatBaht(p.preVat)} · VAT ${p.vatRate}%: ${formatBaht(p.vat)}`);
+    }
+    lines.push(`• ราคารวม${p.vatEnabled ? " VAT" : ""}: <b>${formatBaht(p.grandTotal)}</b>`);
+    if (p.withholding) {
+      lines.push(`• หัก ณ ที่จ่าย ${p.whtRate}%: −${formatBaht(p.wht)} → ลูกค้าโอนจริง <b>${formatBaht(p.netPayable)}</b>`);
+    }
+    lines.push(SEP);
+    lines.push("👉 ตรวจสอบแล้วกด <b>ออกใบเสนอราคา</b> ในหลังบ้าน (เมนู คำขอจองออนไลน์)");
+    if (opts.expiresAt) {
+      lines.push(`⌛ กันห้องไว้ถึง ${bkkDateLabel(opts.expiresAt)} ${bkkTime(opts.expiresAt)} น. — ยังไม่ออกใบเสนอราคาภายในเวลานี้ ห้องจะถูกปล่อย`);
+    }
+    if (opts.adminUrl) lines.push(escapeHtml(opts.adminUrl));
+    if (opts.displacedCount > 0) {
+      lines.push(`🔁 ทับคิวภายใน ${opts.displacedCount} รายการ — ดูรายละเอียดในข้อความถัดไป`);
+    }
+    return lines.join("\n");
+  }
 
   // ── Money: what is due now, what is left for the day ──
   const total = opts.totalAmount;

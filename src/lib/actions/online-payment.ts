@@ -87,6 +87,22 @@ const ConfigPatch = z
     deposit_percent: z.number().int().min(1).max(100),
     payment_hold_minutes: z.number().int().min(10).max(7 * 24 * 60),
     liff_id: z.string().trim().max(64).regex(/^$|^\d+-[A-Za-z0-9]+$/, "LIFF ID ต้องมีรูปแบบ 1234567890-AbCdEfGh"),
+    pricing: z
+      .object({
+        vat_enabled: z.boolean(),
+        vat_rate: z.number().min(0).max(30),
+        vat_inclusive: z.boolean(),
+        wht_enabled: z.boolean(),
+        wht_rate: z.number().min(0).max(15),
+        ot_enabled: z.boolean(),
+        ot_start: z.string().regex(/^\d{2}:\d{2}$/, "เวลาเริ่ม OT ต้องเป็น HH:mm"),
+        ot_type: z.enum(["per_hour", "percent"]),
+        ot_value: z.number().min(0).max(100_000),
+        quote_required: z.boolean(),
+        request_hold_hours: z.number().int().min(1).max(24 * 14),
+        quote_valid_hours: z.number().int().min(1).max(24 * 30),
+      })
+      .partial(),
   })
   .partial();
 
@@ -96,7 +112,11 @@ export async function updatePublicConfig(patch: z.infer<typeof ConfigPatch>) {
   const parsed = ConfigPatch.safeParse(patch);
   if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0]?.message ?? "ข้อมูลไม่ถูกต้อง" };
   const current = await getPublicRoomConfig();
-  const next: PublicRoomConfig = { ...current, ...parsed.data };
+  const next: PublicRoomConfig = {
+    ...current,
+    ...parsed.data,
+    pricing: { ...current.pricing, ...(parsed.data.pricing ?? {}) },
+  };
   const sb = createSupabaseAdminClient();
   const { error } = await sb.from("settings").upsert(
     {

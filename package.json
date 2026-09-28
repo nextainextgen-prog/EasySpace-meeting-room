@@ -12,7 +12,8 @@
     "test:reschedule": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/run.ts",
     "test:public": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/public-booking.ts",
     "test:payment": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/payment.ts",
-    "test:overrides": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/overrides.ts"
+    "test:overrides": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/overrides.ts",
+    "test:quotations": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/quotations.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

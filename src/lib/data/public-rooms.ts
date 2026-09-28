@@ -1,5 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { addDays, bkkParts, fromBkk } from "@/lib/time/bkk";
+import { DEFAULT_PRICING, type PricingConfig } from "@/lib/public-booking/pricing";
 import {
   mergeBlocks,
   type PublicBusyBlock,
@@ -55,6 +56,9 @@ export interface PublicRoomConfig {
    * the LINE console must be `<site>/rooms`. Empty = no LINE messages.
    */
   liff_id: string;
+
+  // ─── Price estimate / quotation ───
+  pricing: PricingConfig;
 }
 
 export const DEFAULT_PUBLIC_ROOM_CONFIG: PublicRoomConfig = {
@@ -81,6 +85,7 @@ export const DEFAULT_PUBLIC_ROOM_CONFIG: PublicRoomConfig = {
   deposit_percent: 30,
   payment_hold_minutes: 60,
   liff_id: "",
+  pricing: DEFAULT_PRICING,
 };
 
 /** Canonical public origin for links that leave the site (LINE, e-mail). */
@@ -109,7 +114,12 @@ export async function getPublicRoomConfig(): Promise<PublicRoomConfig> {
     .eq("key", "public.rooms.config")
     .maybeSingle();
   const value = (data as { value?: Partial<PublicRoomConfig> } | null)?.value;
-  return { ...DEFAULT_PUBLIC_ROOM_CONFIG, ...(value ?? {}) };
+  return {
+    ...DEFAULT_PUBLIC_ROOM_CONFIG,
+    ...(value ?? {}),
+    // Nested: a stored config written before a field existed still gets it.
+    pricing: { ...DEFAULT_PRICING, ...(value?.pricing ?? {}) },
+  };
 }
 
 const ROOM_COLUMNS =
@@ -286,4 +296,19 @@ export async function listPublicBusy(opts: {
 /** Today in Bangkok, `YYYY-MM-DD`. */
 export function bkkToday(): string {
   return bkkParts(new Date()).date;
+}
+
+/** Letterhead for quotations — `company.profile` with safe fallbacks. */
+export async function getCompanyProfile() {
+  const supabase = createSupabaseAdminClient();
+  const { data } = await supabase.from("settings").select("value").eq("key", "company.profile").maybeSingle();
+  const v = ((data as { value?: Record<string, string> } | null)?.value ?? {}) as Record<string, string>;
+  return {
+    name: v.name || "EasySpace",
+    legal_name: v.legal_name || v.name || "EasySpace",
+    tax_id: v.tax_id || "",
+    address: v.address || "",
+    phone: v.phone || "",
+    email: v.email || "",
+  };
 }
