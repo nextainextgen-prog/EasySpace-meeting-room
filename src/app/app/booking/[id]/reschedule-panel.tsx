@@ -60,6 +60,8 @@ export function ReschedulePanel({
   currentTime,
   currentDurationMin,
   roomName,
+  currentRoomId,
+  rooms,
   isSeries,
   followingCount,
   futureCount,
@@ -69,6 +71,8 @@ export function ReschedulePanel({
   currentTime: string;
   currentDurationMin: number;
   roomName: string;
+  currentRoomId: string;
+  rooms: Array<{ id: string; name: string; capacity: string | null }>;
   isSeries: boolean;
   followingCount: number;
   futureCount: number;
@@ -78,6 +82,7 @@ export function ReschedulePanel({
   const [scope, setScope] = useState<Scope>(isSeries ? "following" : "one");
   const [weekday, setWeekday] = useState<Weekday>(currentWeekday);
   const [startTime, setStartTime] = useState(currentTime);
+  const [roomId, setRoomId] = useState(currentRoomId);
   const [durationMin, setDurationMin] = useState(
     DURATIONS.includes(currentDurationMin) ? currentDurationMin : 60,
   );
@@ -93,9 +98,10 @@ export function ReschedulePanel({
       weekday,
       startTime,
       durationMin,
+      roomId: roomId !== currentRoomId ? roomId : undefined,
       mode: "skip_conflicts",
     }),
-    [bookingId, scope, weekday, startTime, durationMin],
+    [bookingId, scope, weekday, startTime, durationMin, roomId, currentRoomId],
   );
 
   // Any edit invalidates the plan the member is looking at — never let a stale
@@ -176,7 +182,7 @@ export function ReschedulePanel({
         iconLeft={<CalendarClock size={14} />}
         onClick={() => setOpen(true)}
       >
-        เลื่อนวัน/เวลา
+        เลื่อนวัน/เวลา/ห้อง
       </Button>
     );
   }
@@ -188,10 +194,10 @@ export function ReschedulePanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-ink-1 tracking-tight">
-            เลื่อนวัน/เวลา
+            เลื่อนวัน/เวลา/ห้อง
           </p>
           <p className="text-xs text-ink-3 mt-0.5">
-            ห้อง {roomName} — ย้ายได้เฉพาะช่วงที่ยังว่างจริงเท่านั้น
+            ตอนนี้อยู่ห้อง {roomName} — ย้ายได้เฉพาะช่วงที่ยังว่างจริงเท่านั้น
           </p>
         </div>
         <Button
@@ -248,6 +254,24 @@ export function ReschedulePanel({
         </div>
       )}
 
+      {rooms.length > 1 && (
+        <div>
+          <Label>ห้อง</Label>
+          <Select
+            value={roomId}
+            onChange={(e) => edit<string>(setRoomId)(e.target.value)}
+          >
+            {rooms.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+                {r.capacity ? ` · ${r.capacity}` : ""}
+                {r.id === currentRoomId ? " (ห้องเดิม)" : ""}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <Label>ย้ายไปวัน</Label>
@@ -292,7 +316,11 @@ export function ReschedulePanel({
 
       {scope !== "one" && (
         <p className="text-[11px] text-ink-3 leading-relaxed">
-          แต่ละครั้งจะย้ายไปวัน{THAI_WEEKDAY_LABEL[weekday]}ของสัปดาห์เดิม —
+          แต่ละครั้งจะย้ายไปวัน{THAI_WEEKDAY_LABEL[weekday]}ของสัปดาห์เดิม
+          {roomId !== currentRoomId
+            ? ` ที่ห้อง ${rooms.find((r) => r.id === roomId)?.name ?? ""}`
+            : ""}{" "}
+          —
           ครั้งที่ผ่านไปแล้วจะไม่ถูกแตะต้อง
         </p>
       )}

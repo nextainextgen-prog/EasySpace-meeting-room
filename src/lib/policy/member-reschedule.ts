@@ -18,7 +18,7 @@ export interface ReschedulePolicy {
   max_advance_days: number;
   /** Ceiling on one request, so a 52-week series cannot become a runaway job. */
   max_occurrences_per_request: number;
-  /** Off by default: members change when, admins change where. */
+  /** Whether a member may also move a booking into another room. */
   allow_room_change: boolean;
   /** Whether rooms.buffer_minutes is enforced, and against whom. */
   respect_room_buffer: "off" | "external_only" | "all";
@@ -36,7 +36,7 @@ export const DEFAULT_RESCHEDULE_POLICY: ReschedulePolicy = {
   min_notice_hours: 2,
   max_advance_days: 365,
   max_occurrences_per_request: 60,
-  allow_room_change: false,
+  allow_room_change: true,
   respect_room_buffer: "external_only",
   respect_service_days: true,
   max_reschedules_per_series_per_month: 4,

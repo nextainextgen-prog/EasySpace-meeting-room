@@ -19,6 +19,7 @@ import { CancelBookingButton } from "./cancel-button";
 import { ReschedulePanel } from "./reschedule-panel";
 import { getSeriesSummary } from "@/lib/actions/member-reschedule";
 import { bkkParts } from "@/lib/time/bkk";
+import { listRooms } from "@/lib/data/rooms";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ interface BookingDetail {
   id: string;
   reference_code: string;
   member_id: string | null;
+  room_id: string;
   org_id: string | null;
   starts_at: string;
   ends_at: string;
@@ -62,7 +64,7 @@ export default async function MemberBookingDetailPage({ params }: PageProps) {
   const { data: bookingRaw } = await admin
     .from("bookings")
     .select(
-      `id, reference_code, member_id, org_id, starts_at, ends_at,
+      `id, reference_code, member_id, room_id, org_id, starts_at, ends_at,
        attendees_count, booking_status, is_public,
        internal_title, internal_agenda, notes,
        cancelled_at, cancelled_reason, created_at,
@@ -88,7 +90,24 @@ export default async function MemberBookingDetailPage({ params }: PageProps) {
   const audit = (auditRaw ?? []) as unknown as AuditEntry[];
 
   const hours = durationHours(booking.starts_at, booking.ends_at);
-  const series = isOwner ? await getSeriesSummary(booking.id) : null;
+  const [series, allRooms] = await Promise.all([
+    isOwner ? getSeriesSummary(booking.id) : null,
+    isOwner ? listRooms() : [],
+  ]);
+  const roomOptions = allRooms
+    .filter(
+      (r) =>
+        r.id === booking.room_id ||
+        (r.status === "active" && r.allow_internal),
+    )
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      capacity:
+        r.capacity_min && r.capacity_max
+          ? `${r.capacity_min}–${r.capacity_max} ท่าน`
+          : null,
+    }));
   const status = booking.booking_status;
   const isCancelled = status === "cancelled";
   const isPast = new Date(booking.ends_at) < new Date();
@@ -194,6 +213,8 @@ export default async function MemberBookingDetailPage({ params }: PageProps) {
                 currentTime={bkkParts(booking.starts_at).time}
                 currentDurationMin={Math.round(hours * 60)}
                 roomName={booking.room?.name ?? "—"}
+                currentRoomId={booking.room_id}
+                rooms={roomOptions}
                 isSeries={series?.isSeries ?? false}
                 followingCount={series?.followingCount ?? 1}
                 futureCount={series?.futureCount ?? 1}
