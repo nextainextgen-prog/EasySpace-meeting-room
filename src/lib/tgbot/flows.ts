@@ -190,6 +190,7 @@ function parseRange(text: string): { start: string; end: string } | null {
 async function runCommand(command: string, link: TelegramLink, ctx: MemberCtx) {
   switch (command) {
     case "/start":
+      await sendTutorial(link.chatId);
       await sendText(link.chatId, `สวัสดีค่ะคุณ${esc(firstName(ctx.fullName))} 🌸\nวันนี้ให้หนูช่วยจองห้องไหมคะ`, { menu: true });
       return;
     case "/book":
@@ -225,8 +226,8 @@ function firstName(full: string) {
 // ─── Linking ───────────────────────────────────────────────────────────────
 
 /**
- * The 90-second how-to clip (design/clips/telegram-booking), sent when a new
- * user presses Start. Telegram fetches it from public/ once; the file_id it
+ * The 90-second how-to clip (design/clips/telegram-booking), sent whenever
+ * someone presses Start, linked or not. Telegram fetches it from public/ once; the file_id it
  * returns is kept and reused, so the clip is never downloaded twice. Rename
  * the file when the clip changes and the old file_id is dropped on its own.
  */
