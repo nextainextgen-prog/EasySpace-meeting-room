@@ -233,6 +233,11 @@ async function main() {
   await tap("pf:rb");
   ok("and back to 60", (await getTelegramLink({ tgUserId: String(TG) }))?.prefs.remindBeforeMin === 60);
 
+  console.log("usage");
+  section = "usage";
+  from = await say("สรุปการใช้งาน");
+  ok("usage summary sent", texts(from).some((t) => t.includes("สรุปเดือน")));
+
   console.log("free text → AI queue → action");
   section = "ai";
   // The worker's answer is simulated below; the sentence matches it so the manual's picture reads true.
@@ -299,14 +304,15 @@ async function main() {
   }
   if (fixture) {
     from = log.length;
-    await runBotTick();
+    await runBotTick({ force: true });
     record(from);
-    const reminder = log.slice(from).find((o) => String(o.payload.text).includes("E2E เตือนก่อนประชุม"));
+    const reminder = log.slice(from).find((o) => String(o.payload.text ?? o.payload.caption).includes("E2E เตือนก่อนประชุม"));
     ok("reminder before start, with edit and cancel", !!reminder && buttons(reminder).some((x) => x.callback_data === `bm:${fixture}`));
+    ok("reminder carries the day's schedule picture", reminder?.method === "sendPhoto" && !!reminder.photo);
+    if (reminder?.photo) fs.writeFileSync(path.join(OUT, "reminder.png"), reminder.photo);
     from = log.length;
-    await kvDel(`tgbot:tick:${new Date().toISOString().slice(0, 16)}`);
-    await runBotTick();
-    ok("not sent twice", !log.slice(from).some((o) => String(o.payload.text).includes("E2E เตือนก่อนประชุม")));
+    await runBotTick({ force: true });
+    ok("not sent twice", !log.slice(from).some((o) => String(o.payload.text ?? o.payload.caption).includes("E2E เตือนก่อนประชุม")));
   } else {
     console.log("  skip reminder check: no room free in 40 minutes");
   }

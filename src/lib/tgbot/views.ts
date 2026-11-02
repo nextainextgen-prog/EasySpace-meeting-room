@@ -21,7 +21,7 @@ import {
   type OwnBooking,
   type PortalRoom,
 } from "@/lib/server/member-ops";
-import { dayHeader, renderSchedule, shortRoomName } from "./render";
+import { dayHeader, fetchPhoto, renderSchedule, shortRoomName, type ScheduleRoom } from "./render";
 import { editButtons, editText, sendPhoto, sendText, type Keyboard } from "./telegram";
 import { kvGet, kvSet, kvDel, type ReminderPrefs, type TelegramLink } from "./store";
 
@@ -138,29 +138,49 @@ function grid<T>(items: T[], perRow: number): T[][] {
 
 // ─── Week and day pictures ─────────────────────────────────────────────────
 
-export async function sendWeek(link: TelegramLink, ctx: MemberCtx, fromDate?: string) {
-  // A rolling seven days from today: on a Sunday "this week" would be six
-  // days of history and one day you can still book.
+/** Rooms as the picture shows them: photo, number, name, capacity. */
+async function scheduleRooms(rooms: PortalRoom[]): Promise<ScheduleRoom[]> {
+  const photos = await Promise.all(rooms.map((r) => fetchPhoto(r.thumbnailUrl)));
+  return rooms.map((r, i) => ({
+    id: r.id,
+    name: r.name,
+    color: r.color,
+    short: shortRoomName(r.name),
+    capacity: r.capacityMax ? `${r.capacityMin ?? 1}–${r.capacityMax} คน` : undefined,
+    photo: photos[i],
+  }));
+}
+
+/** Seven days from `start`, every room; the viewer's bookings in blue. */
+export async function weekImage(viewer: { memberId: string } | null, start: string, title?: string): Promise<Buffer> {
   const today = bkkDate(new Date());
-  const start = fromDate && fromDate > today ? fromDate : today;
   const end = addDays(start, 6);
   const [rooms, blocks, hours] = await Promise.all([listMemberRooms(), listBlocks(start, end), getOpenHours()]);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
-  const image = renderSchedule({
-    title: start === today ? "ตารางห้องประชุม 7 วันนี้" : "ตารางห้องประชุม 7 วันถัดไป",
+  return renderSchedule({
+    title: title ?? (start === today ? "ตารางห้องประชุม 7 วันนี้" : "ตารางห้องประชุม 7 วันถัดไป"),
     subtitle: `${dayHeader(start).label} ${dayHeader(start).sub} – ${dayHeader(end).label} ${dayHeader(end).sub} · ทุกห้อง`,
     days: days.map((d) => ({ date: d, ...dayHeader(d) })),
-    rooms: rooms.map((r) => ({ id: r.id, name: r.name, color: r.color, short: shortRoomName(r.name) })),
+    rooms: await scheduleRooms(rooms),
     blocks: blocks.map((b) => ({
       roomId: b.roomId,
       startsAt: b.startsAt,
       endsAt: b.endsAt,
-      mine: b.memberId === ctx.memberId,
+      mine: !!viewer && b.memberId === viewer.memberId,
       label: "",
     })),
     open: hours.open,
     close: hours.close,
   });
+}
+
+export async function sendWeek(link: TelegramLink, ctx: MemberCtx, fromDate?: string) {
+  // A rolling seven days from today: on a Sunday "this week" would be six
+  // days of history and one day you can still book.
+  const today = bkkDate(new Date());
+  const start = fromDate && fromDate > today ? fromDate : today;
+  const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  const image = await weekImage(ctx, start);
 
   const dayButtons = days.map((d) => ({
     text: d === today ? "วันนี้" : d === addDays(today, 1) ? "พรุ่งนี้" : `${dayHeader(d).label}`,
@@ -179,28 +199,53 @@ export async function sendWeek(link: TelegramLink, ctx: MemberCtx, fromDate?: st
   );
 }
 
-export async function sendDay(link: TelegramLink, ctx: MemberCtx, date: string) {
-  const [rooms, blocks, hours] = await Promise.all([listMemberRooms(), listBlocks(date, date), getOpenHours()]);
-  const h = dayHeader(date);
-  const image = renderSchedule({
-    title: `ห้องว่าง${dayWord(date) === "วันนี้" ? "วันนี้" : ""}`,
-    subtitle: `${thaiDay(date)} · ${h.label} ${h.sub}`,
-    days: [{ date, label: h.label, sub: h.sub }],
-    rooms: rooms.map((r) => ({ id: r.id, name: r.name, color: r.color, short: shortRoomName(r.name) })),
+/**
+ * One day, every room, as the member is allowed to see it. `highlightId`
+ * paints one booking orange — the one a notice is about.
+ */
+export async function dayImage(opts: {
+  date: string;
+  viewer: { memberId: string; orgId: string } | null;
+  highlightId?: string;
+  highlightLabel?: string;
+  highlightLegend?: string;
+  title?: string;
+}): Promise<Buffer> {
+  const [rooms, blocks, hours] = await Promise.all([listMemberRooms(), listBlocks(opts.date, opts.date), getOpenHours()]);
+  const h = dayHeader(opts.date);
+  return renderSchedule({
+    title: opts.title ?? `ห้องว่าง${dayWord(opts.date) === "วันนี้" ? "วันนี้" : ""}`,
+    subtitle: `${thaiDay(opts.date)} · ${h.label} ${h.sub}`,
+    days: [{ date: opts.date, label: h.label, sub: h.sub }],
+    rooms: await scheduleRooms(rooms),
     blocks: blocks.map((b) => {
-      const mine = b.memberId === ctx.memberId;
-      const same = b.kind === "internal" && b.orgId === ctx.orgId;
+      const mine = !!opts.viewer && b.memberId === opts.viewer.memberId;
+      const same = !!opts.viewer && b.kind === "internal" && b.orgId === opts.viewer.orgId;
+      const highlight = b.id === opts.highlightId;
       return {
         roomId: b.roomId,
         startsAt: b.startsAt,
         endsAt: b.endsAt,
         mine,
-        label: mine ? b.title ?? "ของคุณ" : same ? b.memberName ?? "เพื่อนร่วมงาน" : "ไม่ว่าง",
+        highlight,
+        label: highlight
+          ? opts.highlightLabel ?? "จองใหม่"
+          : mine
+            ? b.title ?? "ของคุณ"
+            : same
+              ? b.memberName ?? "เพื่อนร่วมงาน"
+              : "ไม่ว่าง",
       };
     }),
     open: hours.open,
     close: hours.close,
+    highlightLegend: opts.highlightLegend,
   });
+}
+
+export async function sendDay(link: TelegramLink, ctx: MemberCtx, date: string) {
+  const [rooms, blocks, hours] = await Promise.all([listMemberRooms(), listBlocks(date, date), getOpenHours()]);
+  const image = await dayImage({ date, viewer: ctx });
 
   const lines: string[] = [];
   const quick: Keyboard = [];
@@ -425,12 +470,16 @@ export async function sendMyBookings(link: TelegramLink, ctx: MemberCtx) {
   if (list.length === 0) {
     return sendText(link.chatId, "ตอนนี้ยังไม่มีการจองที่กำลังจะมาถึงค่ะ\nกด จองห้อง ได้เลยนะคะ", { menu: true });
   }
-  await sendText(
-    link.chatId,
+  const header =
     list.length > 5
       ? `มี ${list.length} รายการใน 30 วันนี้ค่ะ หนูแสดง 5 รายการแรกนะคะ\nดูทั้งหมดได้ที่เว็บ EasySpace`
-      : `มี ${list.length} รายการที่กำลังจะมาถึงค่ะ`,
-  );
+      : `มี ${list.length} รายการที่กำลังจะมาถึงค่ะ`;
+  // Seven days at a glance first: blue is yours, which room, until when.
+  try {
+    await sendPhoto(link.chatId, await weekImage(ctx, today, "การจองของคุณ 7 วันนี้"), `${header}\nสีน้ำเงินในภาพคือการจองของคุณค่ะ`);
+  } catch {
+    await sendText(link.chatId, header);
+  }
   for (const b of list.slice(0, 5)) {
     await sendText(link.chatId, bookingLine(b), { buttons: bookingButtons(b) });
   }

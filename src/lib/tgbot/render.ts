@@ -30,6 +30,7 @@ const C = {
   busy: "#CBD5E1",
   busyInk: "#334155",
   now: "#EF4444",
+  highlight: "#F97316",
   past: "#F8FAFC",
 };
 
@@ -93,6 +94,8 @@ export interface ScheduleRoom {
   name: string;
   color: string;
   short: string;
+  capacity?: string;
+  photo?: { data: Buffer; type: string } | null;
 }
 
 export interface ScheduleBlock {
@@ -101,6 +104,8 @@ export interface ScheduleBlock {
   endsAt: string;
   mine: boolean;
   label: string;
+  /** The booking a notice is about: drawn in orange so it stands out. */
+  highlight?: boolean;
 }
 
 export function renderSchedule(input: {
@@ -112,13 +117,20 @@ export function renderSchedule(input: {
   open: string;
   close: string;
   now?: Date;
+  /** Legend text for highlighted blocks. */
+  highlightLegend?: string;
 }): Buffer {
   const W = 1280;
   const single = input.days.length === 1;
   const pad = 32;
   const gutter = 64;
-  const headH = single ? 128 : 150;
-  const dayHeadH = single ? 64 : 74;
+  const n = input.rooms.length;
+  // Week: a row of room cards (photo, number, name) explains the numbered
+  // columns under every day. Day: each column is a room, headed by its photo.
+  const cardsTop = 128;
+  const cardH = 112;
+  const headH = single ? 128 : cardsTop + cardH + 24;
+  const dayHeadH = single ? 176 : 92;
   const startMin = Math.floor(timeToMinutes(input.open) / 60) * 60;
   const endMin = Math.ceil(timeToMinutes(input.close) / 60) * 60;
   const hours = (endMin - startMin) / 60;
@@ -129,41 +141,57 @@ export function renderSchedule(input: {
   const gridW = W - pad * 2 - gutter;
   const dayW = gridW / input.days.length;
   const laneGap = single ? 10 : 3;
-  const laneW = (dayW - (single ? 16 : 10) - laneGap * (input.rooms.length - 1)) / input.rooms.length;
+  const laneW = (dayW - (single ? 16 : 10) - laneGap * (n - 1)) / n;
   const now = input.now ?? new Date();
   const today = bkkDate(now);
   const y = (min: number) => gridTop + ((min - startMin) / 60) * hourH;
 
   const parts: string[] = [];
+  const defs: string[] = [];
   parts.push(`<rect width="${W}" height="${H}" fill="${C.page}"/>`);
   parts.push(`<rect x="16" y="16" width="${W - 32}" height="${H - 32}" rx="28" fill="${C.card}"/>`);
   parts.push(t(pad + 16, 70, input.title, { size: 34, weight: 700, fill: C.primary }));
   parts.push(t(pad + 16, 106, input.subtitle, { size: 21, fill: C.ink2 }));
 
-  // Legend: rooms, then the two fills.
+  // Fill legend, top right.
   let lx = W - pad - 16;
-  const legend: string[] = [];
-  const items: Array<{ label: string; color: string; ring?: boolean }> = [
+  for (const it of [
     { label: "ไม่ว่าง", color: C.busy },
     { label: "ของคุณ", color: C.primary },
-  ];
-  for (const it of items) {
-    const w = it.label.length * 13 + 40;
-    lx -= w;
-    legend.push(`<rect x="${lx}" y="${single ? 52 : 50}" width="20" height="20" rx="6" fill="${it.color}"/>`);
-    legend.push(t(lx + 28, single ? 68 : 66, it.label, { size: 18, fill: C.ink2 }));
+    ...(input.blocks.some((b) => b.highlight) ? [{ label: input.highlightLegend ?? "จองใหม่", color: C.highlight }] : []),
+  ]) {
+    lx -= it.label.length * 13 + 40;
+    parts.push(`<rect x="${lx}" y="52" width="20" height="20" rx="6" fill="${it.color}"/>`);
+    parts.push(t(lx + 28, 68, it.label, { size: 18, fill: C.ink2 }));
   }
-  parts.push(...legend);
+
+  const badge = (cx: number, cy: number, r: number, color: string, num: number) =>
+    `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"/>` +
+    t(cx, cy + r * 0.42, String(num), { size: Math.round(r * 1.15), weight: 700, fill: "#FFFFFF", anchor: "middle" });
+
+  const photo = (id: string, x: number, yy: number, w: number, h: number, r: ScheduleRoom, radius: number) => {
+    defs.push(`<clipPath id="${id}"><rect x="${x}" y="${yy}" width="${w}" height="${h}" rx="${radius}"/></clipPath>`);
+    if (r.photo) {
+      return `<image x="${x}" y="${yy}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})" href="data:${r.photo.type};base64,${r.photo.data.toString("base64")}"/>`;
+    }
+    return `<rect x="${x}" y="${yy}" width="${w}" height="${h}" rx="${radius}" fill="${r.color}" opacity="0.16"/>` +
+      t(x + w / 2, yy + h / 2 + 14, r.name.slice(0, 1), { size: 40, weight: 700, fill: r.color, anchor: "middle" });
+  };
+
   if (!single) {
-    // Lane order, so the narrow columns can be read.
-    let rx = pad + 16;
-    const ly = 134;
-    parts.push(t(rx, ly, "ลำดับห้องในแต่ละวัน", { size: 16, fill: C.ink3 }));
-    rx += 190;
-    input.rooms.forEach((r) => {
-      parts.push(`<rect x="${rx}" y="${ly - 15}" width="18" height="18" rx="5" fill="${r.color}"/>`);
-      parts.push(t(rx + 24, ly, `${r.short} = ${r.name}`, { size: 16, fill: C.ink2 }));
-      rx += 24 + (r.short.length + r.name.length + 3) * 9.5 + 22;
+    const gap = 16;
+    const cardW = (W - pad * 2 - 32 - gap * (n - 1)) / n;
+    input.rooms.forEach((r, i) => {
+      const x = pad + 16 + i * (cardW + gap);
+      parts.push(`<rect x="${x}" y="${cardsTop}" width="${cardW}" height="${cardH}" rx="18" fill="${C.page}"/>`);
+      const pw = Math.min(124, cardW * 0.34);
+      parts.push(photo(`rc${i}`, x + 8, cardsTop + 8, pw, cardH - 16, r, 12));
+      const tx = x + 8 + pw + 16;
+      const tw = cardW - pw - 40;
+      parts.push(badge(tx + 15, cardsTop + 34, 15, r.color, i + 1));
+      parts.push(t(tx + 40, cardsTop + 42, fit(r.name, tw - 20, 20), { size: 20, weight: 700 }));
+      if (r.capacity) parts.push(t(tx, cardsTop + 74, r.capacity, { size: 17, fill: C.ink2 }));
+      parts.push(t(tx, cardsTop + 98, fit(`ช่องที่ ${i + 1} ของทุกวัน`, tw, 15), { size: 15, fill: C.ink3 }));
     });
   }
 
@@ -186,13 +214,13 @@ export function renderSchedule(input: {
       if (isToday) {
         parts.push(`<rect x="${x0 + 3}" y="${headH - 4}" width="${dayW - 6}" height="${dayHeadH + gridH + 8}" rx="16" fill="${C.primarySoft}" opacity="0.55"/>`);
       }
-      parts.push(t(x0 + dayW / 2, headH + 30, d.label, {
+      parts.push(t(x0 + dayW / 2, headH + 28, d.label, {
         size: 21,
         weight: 700,
         fill: isToday ? C.primary : isPast ? C.ink3 : C.ink1,
         anchor: "middle",
       }));
-      parts.push(t(x0 + dayW / 2, headH + 56, d.sub, {
+      parts.push(t(x0 + dayW / 2, headH + 50, d.sub, {
         size: 16,
         fill: isToday ? C.primary : C.ink3,
         anchor: "middle",
@@ -204,10 +232,15 @@ export function renderSchedule(input: {
 
     input.rooms.forEach((r, ri) => {
       const lx0 = x0 + (single ? 8 : 5) + ri * (laneW + laneGap);
-      // Lane head: room colour + short name.
-      parts.push(`<rect x="${lx0}" y="${gridTop - (single ? 12 : 14)}" width="${laneW}" height="${single ? 6 : 8}" rx="3" fill="${r.color}"/>`);
+      // Lane head: the room's number (week) or its photo and name (day).
+      parts.push(`<rect x="${lx0}" y="${gridTop - (single ? 12 : 8)}" width="${laneW}" height="${single ? 6 : 5}" rx="3" fill="${r.color}"/>`);
       if (single) {
-        parts.push(t(lx0 + laneW / 2, gridTop - 22, r.name, { size: 18, weight: 600, fill: C.ink2, anchor: "middle" }));
+        parts.push(photo(`dc${ri}`, lx0, headH + 4, laneW, 112, r, 14));
+        parts.push(badge(lx0 + 22, headH + 140, 13, r.color, ri + 1));
+        parts.push(t(lx0 + 44, headH + 147, fit(r.name, laneW - 50, 19), { size: 19, weight: 700 }));
+        if (r.capacity) parts.push(t(lx0 + laneW, headH + 147, r.capacity, { size: 16, fill: C.ink3, anchor: "end" }));
+      } else {
+        parts.push(badge(lx0 + laneW / 2, gridTop - 24, 10, r.color, ri + 1));
       }
       const blocks = input.blocks.filter(
         (b) => b.roomId === r.id && bkkDate(b.startsAt) <= d.date && bkkDate(new Date(Date.parse(b.endsAt) - 1)) >= d.date,
@@ -218,13 +251,19 @@ export function renderSchedule(input: {
         const top = y(Math.max(sMin, startMin));
         const bottom = y(Math.min(eMin, endMin));
         if (bottom - top < 2) continue;
-        const fill = b.mine ? C.primary : C.busy;
+        const fill = b.highlight ? C.highlight : b.mine ? C.primary : C.busy;
         parts.push(`<rect x="${lx0}" y="${top + 1.5}" width="${laneW}" height="${bottom - top - 3}" rx="${single ? 10 : 6}" fill="${fill}"/>`);
-        if (single && bottom - top >= 30) {
-          const ink = b.mine ? "#FFFFFF" : C.busyInk;
-          parts.push(t(lx0 + 14, top + 26, fit(b.label, laneW - 20, 18), { size: 18, weight: 600, fill: ink }));
+        if (single && bottom - top >= 24) {
+          const ink = b.mine || b.highlight ? "#FFFFFF" : C.busyInk;
+          const span = `${bkkTime(b.startsAt)}–${bkkTime(b.endsAt)}`;
           if (bottom - top >= 56) {
-            parts.push(t(lx0 + 14, top + 50, `${bkkTime(b.startsAt)}–${bkkTime(b.endsAt)}`, { size: 16, fill: ink }));
+            parts.push(t(lx0 + 14, top + 26, fit(b.label, laneW - 20, 18), { size: 18, weight: 600, fill: ink }));
+            parts.push(t(lx0 + 14, top + 50, span, { size: 16, fill: ink }));
+          } else {
+            // A half-hour block: name and time on one line.
+            const y0 = top + (bottom - top) / 2 + 6;
+            parts.push(t(lx0 + 14, y0, fit(b.label, laneW - 130, 16), { size: 16, weight: 600, fill: ink }));
+            parts.push(t(lx0 + laneW - 12, y0, span, { size: 15, fill: ink, anchor: "end" }));
           }
         }
       }
@@ -248,7 +287,7 @@ export function renderSchedule(input: {
 
   parts.push(t(pad + 16, H - 34, `เวลาเปิดจอง ${input.open}–${input.close} น.  ·  ช่องว่างสีขาวคือเวลาที่ยังจองได้`, { size: 17, fill: C.ink3 }));
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${parts.join("")}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs>${defs.join("")}</defs>${parts.join("")}</svg>`;
   return png(svg, W);
 }
 
@@ -318,9 +357,19 @@ export function renderSummary(s: SummaryInput): Buffer {
   return png(svg, W);
 }
 
-/** Fetch a room photo for embedding; anything unusable just returns null. */
+const photoCache = new Map<string, { at: number; value: { data: Buffer; type: string } | null }>();
+
+/** Fetch a room photo for embedding (cached 30 min); anything unusable is null. */
 export async function fetchPhoto(url: string | null): Promise<{ data: Buffer; type: string } | null> {
   if (!url) return null;
+  const hit = photoCache.get(url);
+  if (hit && Date.now() - hit.at < 30 * 60_000) return hit.value;
+  const value = await fetchPhotoUncached(url);
+  photoCache.set(url, { at: Date.now(), value });
+  return value;
+}
+
+async function fetchPhotoUncached(url: string): Promise<{ data: Buffer; type: string } | null> {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
     if (!res.ok) return null;

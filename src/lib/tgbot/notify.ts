@@ -15,19 +15,20 @@
 
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { addDays, bkkDate, bkkTime } from "@/lib/time/bkk";
-import { formatHours, getOpenHours, listBlocks, type Block } from "@/lib/server/member-ops";
-import { botConfigured, sendText, type Keyboard } from "./telegram";
+import { formatHours, getOpenHours, listBlocks, loadMemberCtx, type Block } from "@/lib/server/member-ops";
+import { botConfigured, sendPhoto, sendText, type Keyboard } from "./telegram";
 import { kvAdd, kvGet, kvPurge, kvSet, listTelegramLinks, type TelegramLink } from "./store";
 import { rescueStaleJobs } from "./ai";
-import { esc, nextFreeAfter, thaiDay } from "./views";
+import { dayImage, esc, nextFreeAfter, thaiDay } from "./views";
 
 const MIN = 60_000;
 
-export async function runBotTick(): Promise<{ sent: number; skipped?: string }> {
+export async function runBotTick(opts: { force?: boolean } = {}): Promise<{ sent: number; skipped?: string }> {
   if (!botConfigured() && process.env.TGBOT_DRY_RUN !== "1") return { sent: 0, skipped: "not_configured" };
-  // One tick at a time across callers: a key per minute.
+  // One tick at a time across callers: a key per minute. Tests force past it,
+  // since production ticks against the same database every minute.
   const minuteKey = new Date().toISOString().slice(0, 16);
-  if (!(await kvAdd(`tgbot:tick:${minuteKey}`, 1))) return { sent: 0, skipped: "already_ran" };
+  if (!(await kvAdd(`tgbot:tick:${minuteKey}`, 1)) && !opts.force) return { sent: 0, skipped: "already_ran" };
 
   const links = await listTelegramLinks();
   let sent = 0;
@@ -96,13 +97,25 @@ async function meetingReminders(links: TelegramLink[]): Promise<number> {
     if (p.remindBeforeMin > 0 && toStart > 0 && toStart <= p.remindBeforeMin && !fresh) {
       if (await once(`before:${b.id}:${start}`)) {
         const left = Math.max(1, Math.round(toStart));
-        await sendText(
-          link.chatId,
-          `⏰ อีก ${left >= 60 && left % 60 === 0 ? `${left / 60} ชั่วโมง` : left >= 60 ? formatHours(left / 60) : `${left} นาที`}ประชุมนะคะ\n\n<b>${esc(room)} · ${span}</b>\n${title}`,
-          {
-            buttons: [[{ text: "แก้เวลา", data: `bm:${b.id}` }, { text: "ยกเลิก", data: `bc:${b.id}` }]],
-          },
-        );
+        const text = `⏰ อีก ${left >= 60 && left % 60 === 0 ? `${left / 60} ชั่วโมง` : left >= 60 ? formatHours(left / 60) : `${left} นาที`}ประชุมนะคะ\n\n<b>${esc(room)} · ${span}</b>\n${title}`;
+        const kb: Keyboard = [[{ text: "แก้เวลา", data: `bm:${b.id}` }, { text: "ยกเลิก", data: `bc:${b.id}` }]];
+        // The day's schedule with this meeting in orange.
+        let image: Buffer | null = null;
+        try {
+          const ctx = await loadMemberCtx(link.memberId);
+          image = await dayImage({
+            date: bkkDate(b.starts_at),
+            viewer: ctx,
+            highlightId: b.id,
+            highlightLabel: b.internal_title ?? "ประชุมของคุณ",
+            highlightLegend: "ประชุมนี้",
+            title: "ประชุมที่กำลังจะถึง",
+          });
+        } catch (e) {
+          console.error("[tgbot] reminder image failed", e);
+        }
+        if (image) await sendPhoto(link.chatId, image, text, kb);
+        else await sendText(link.chatId, text, { buttons: kb });
         sent++;
       }
     }
@@ -196,15 +209,29 @@ async function externalAlerts(links: TelegramLink[]): Promise<number> {
         .map((c) => [c.member_id as string, c.reference_code]),
     );
     const head = `มีการจองจากลูกค้าภายนอกค่ะ\n<b>${esc(r.room?.name ?? "ห้องประชุม")} · ${thaiDay(bkkDate(r.starts_at))} · ${bkkTime(r.starts_at)}–${bkkTime(r.ends_at)}</b>`;
+    const date = bkkDate(r.starts_at);
     for (const l of links) {
       const ref = affected.get(l.memberId);
       if (!ref && !l.prefs.externalAlerts) continue;
-      await sendText(
-        l.chatId,
-        ref
-          ? `${head}\n\nช่วงนี้ทับการจองของคุณ (<code>${ref}</code>) ทีมงานจะช่วยย้ายห้องให้นะคะ ดูสถานะล่าสุดได้ที่ การจองของฉัน`
-          : head,
-      );
+      const caption = ref
+        ? `${head}\n\nช่วงนี้ทับการจองของคุณ (<code>${ref}</code>) ทีมงานจะช่วยย้ายห้องให้นะคะ ดูสถานะล่าสุดได้ที่ การจองของฉัน`
+        : head;
+      // The day's schedule with the new booking in orange: which room, until when.
+      let image: Buffer | null = null;
+      try {
+        const ctx = await loadMemberCtx(l.memberId);
+        image = await dayImage({
+          date,
+          viewer: ctx,
+          highlightId: r.id,
+          highlightLabel: "ลูกค้าภายนอก (ใหม่)",
+          title: "มีการจองใหม่",
+        });
+      } catch (e) {
+        console.error("[tgbot] external alert image failed", e);
+      }
+      if (image) await sendPhoto(l.chatId, image, caption);
+      else await sendText(l.chatId, caption);
       sent++;
     }
   }
