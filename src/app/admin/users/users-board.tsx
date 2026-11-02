@@ -1441,6 +1441,7 @@ function OrgFormModal({
             label="โลโก้องค์กร"
             hint="PNG · JPG · WEBP · GIF · HEIC · ไม่เกิน 10 MB · แนะนำสี่เหลี่ยมจัตุรัส 512×512 px"
             aspectRatio="1 / 1"
+            frameClassName="max-w-[160px]"
             value={form.logo_url || null}
             onChange={(url) =>
               setForm({ ...form, logo_url: url ?? "" })

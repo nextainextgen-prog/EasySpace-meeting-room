@@ -13,6 +13,8 @@ interface Props {
   /** Aspect ratio CSS string. Defaults to "1536 / 1384" so 1536×1384 source
    * images fit perfectly without cropping. */
   aspectRatio?: string;
+  /** Cap the preview/drop area width, e.g. "max-w-[160px]" for a logo. */
+  frameClassName?: string;
 }
 
 const HEIC_TYPES = new Set(["image/heic", "image/heif", "image/heic-sequence"]);
@@ -52,6 +54,7 @@ export function ImageUploader({
   label = "รูปภาพ",
   hint = "PNG · JPG · WEBP · GIF · HEIC · ไม่เกิน 10 MB · เห็นเต็มภาพไม่ถูกตัด",
   aspectRatio = "1536 / 1384",
+  frameClassName,
 }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
@@ -127,7 +130,7 @@ export function ImageUploader({
       />
 
       {value ? (
-        <div className="relative rounded-input border border-line bg-surface-subtle/40 overflow-hidden group">
+        <div className={cn("relative rounded-input border border-line bg-surface-subtle/40 overflow-hidden group", frameClassName)}>
           <div
             style={{ aspectRatio }}
             className="w-full grid place-items-center"
@@ -183,6 +186,7 @@ export function ImageUploader({
           onDrop={onDrop}
           onClick={pick}
           className={cn(
+            frameClassName,
             "relative cursor-pointer rounded-input border-2 border-dashed transition",
             "grid place-items-center text-center px-4",
             dragOver
@@ -204,10 +208,14 @@ export function ImageUploader({
               <span className="w-12 h-12 grid place-items-center rounded-full bg-white border border-line">
                 <ImageIcon size={20} strokeWidth={1.5} />
               </span>
-              <p className="text-sm font-semibold text-ink-1 tracking-tight">
-                ลากไฟล์มาวาง หรือคลิกเพื่อเลือก
-              </p>
-              <p className="text-[11px] leading-relaxed max-w-xs">{hint}</p>
+              {!frameClassName && (
+                <>
+                  <p className="text-sm font-semibold text-ink-1 tracking-tight">
+                    ลากไฟล์มาวาง หรือคลิกเพื่อเลือก
+                  </p>
+                  <p className="text-[11px] leading-relaxed max-w-xs">{hint}</p>
+                </>
+              )}
               <span className="mt-2 inline-flex items-center gap-1.5 h-8 px-4 rounded-pill bg-primary-600 text-white text-xs font-medium">
                 <Upload size={12} strokeWidth={1.75} />
                 เลือกรูป
@@ -215,6 +223,10 @@ export function ImageUploader({
             </div>
           )}
         </div>
+      )}
+
+      {frameClassName && hint && (
+        <p className="text-[11px] text-ink-3 mt-1.5">{hint}</p>
       )}
 
       {err && (
