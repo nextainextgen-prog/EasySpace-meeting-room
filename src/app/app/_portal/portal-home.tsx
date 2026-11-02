@@ -19,19 +19,26 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { bkkDate, bkkTime } from "@/lib/time/bkk";
-import { portalBook, portalCancel, portalEndNow, portalExtend, portalRename } from "@/lib/actions/portal";
+import { portalCancel, portalEndNow, portalExtend, portalRename } from "@/lib/actions/portal";
 import type { OwnBooking } from "@/lib/server/member-ops";
 import type { PortalData } from "@/lib/server/portal-data";
 import { Modal } from "@/components/ui/modal";
 import { Availability } from "./availability";
-import { BookingSheet, type SheetMode } from "./booking-sheet";
 import { dayChip } from "./format";
 import { clockText, durationText, hoursText, useNow } from "./use-now";
 
 export function PortalHome({ data }: { data: PortalData }) {
   const router = useRouter();
   const now = useNow(data.serverNow);
-  const [sheet, setSheet] = useState<SheetMode | null>(null);
+  // Booking and moving use the original booking pages; this page only links to them.
+  const openBooking = (p?: { roomId?: string; date?: string; start?: string }) => {
+    const q = new URLSearchParams();
+    if (p?.date) q.set("date", p.date);
+    if (p?.start) q.set("slot", p.start);
+    if (p?.roomId) q.set("roomId", p.roomId);
+    router.push(`/app/booking/new${q.size ? `?${q}` : ""}`);
+  };
+  const openBookingDetail = (b: OwnBooking) => router.push(`/app/booking/${b.id}`);
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<OwnBooking | null>(null);
   const [renaming, setRenaming] = useState<OwnBooking | null>(null);
@@ -52,7 +59,6 @@ export function PortalHome({ data }: { data: PortalData }) {
 
   function done(text: string, ok = true) {
     setToast({ text, ok });
-    setSheet(null);
     router.refresh();
   }
 
@@ -73,7 +79,7 @@ export function PortalHome({ data }: { data: PortalData }) {
         </div>
         <button
           type="button"
-          onClick={() => setSheet({ kind: "new" })}
+          onClick={() => openBooking()}
           data-tour="book"
           className="h-11 px-5 rounded-pill bg-primary-600 text-white text-sm font-semibold inline-flex items-center gap-2 shadow-card hover:bg-primary-700 active:scale-[0.98] transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100"
         >
@@ -89,20 +95,20 @@ export function PortalHome({ data }: { data: PortalData }) {
             next={next}
             now={now}
             today={data.today}
-            onBook={() => setSheet({ kind: "new" })}
-            onMove={(b) => setSheet({ kind: "move", booking: b })}
+            onBook={() => openBooking()}
+            onMove={openBookingDetail}
             onCancel={setConfirmCancel}
             onResult={(r) => done(r.message, r.ok)}
           />
           <div className="lg:hidden">
             <UsageCard data={data} />
           </div>
-          <QuickBook data={data} onAdjust={(p) => setSheet({ kind: "new", ...p })} onResult={(r) => done(r.message, r.ok)} />
-          <Availability data={data} now={now} onBook={(p) => setSheet({ kind: "new", ...p })} />
+          <QuickBook data={data} onPick={openBooking} />
+          <Availability data={data} now={now} onBook={openBooking} />
           <BookingsList
             data={data}
             now={now}
-            onMove={(b) => setSheet({ kind: "move", booking: b })}
+            onMove={openBookingDetail}
             onCancel={setConfirmCancel}
             onRename={setRenaming}
             onResult={(r) => done(r.message, r.ok)}
@@ -117,7 +123,6 @@ export function PortalHome({ data }: { data: PortalData }) {
         </aside>
       </div>
 
-      <BookingSheet data={data} mode={sheet} onClose={() => setSheet(null)} onDone={(m) => done(m)} />
       <CancelDialog booking={confirmCancel} onClose={() => setConfirmCancel(null)} onDone={(r) => { setConfirmCancel(null); done(r.message, r.ok); }} />
       <RenameDialog booking={renaming} onClose={() => setRenaming(null)} onDone={(r) => { setRenaming(null); done(r.message, r.ok); }} />
 
@@ -334,47 +339,20 @@ function UsageCard({ data }: { data: PortalData }) {
 
 function QuickBook({
   data,
-  onAdjust,
-  onResult,
+  onPick,
 }: {
   data: PortalData;
-  onAdjust: (p: { roomId: string; date: string; start: string; end: string; title?: string }) => void;
-  onResult: (r: Result) => void;
+  onPick: (p: { roomId: string; date: string; start: string }) => void;
 }) {
-  const [picked, setPicked] = useState<{ roomId: string; date: string; start: string; end: string; roomName: string } | null>(null);
-  const [title, setTitle] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, start] = useTransition();
   const list = data.suggestions.filter((s) => s.slots.length > 0);
-  const recentTitles = useMemo(
-    () => [...new Set([...data.upcoming, ...data.past].map((b) => b.title).filter((t) => t && t !== "ประชุม"))].slice(0, 3),
-    [data.upcoming, data.past],
-  );
   if (list.length === 0) return null;
-
-  function book() {
-    if (!picked || !title.trim()) return;
-    setError(null);
-    start(async () => {
-      const res = await portalBook({ ...picked, title: title.trim() });
-      if (!res.ok) return setError(res.message);
-      setPicked(null);
-      setTitle("");
-      onResult({ ok: true, message: `จอง ${res.roomName} ${dayChip(picked.date, data.today).label} ${picked.start}–${picked.end} แล้ว` });
-    });
-  }
-
   return (
     <section data-tour="quick" aria-labelledby="quick-h" className="rounded-card bg-white border border-line-soft shadow-card p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 id="quick-h" className="text-base font-bold tracking-tight text-ink-1 flex items-center gap-2">
-            <Sparkles size={16} strokeWidth={1.75} className="text-primary-600" />
-            จองด่วน ห้องที่ใช้บ่อย
-          </h2>
-          <p className="text-xs text-ink-2 mt-0.5">เวลาแนะนำจากการใช้งานของคุณ เช็กแล้วว่ายังว่าง</p>
-        </div>
-      </div>
+      <h2 id="quick-h" className="text-base font-bold tracking-tight text-ink-1 flex items-center gap-2">
+        <Sparkles size={16} strokeWidth={1.75} className="text-primary-600" />
+        จองด่วน ห้องที่ใช้บ่อย
+      </h2>
+      <p className="text-xs text-ink-2 mt-0.5">เวลาแนะนำจากการใช้งานของคุณ เช็กแล้วว่ายังว่าง กดเพื่อไปหน้าจองพร้อมห้องและเวลานี้</p>
 
       <ul className="mt-4 divide-y divide-line-soft">
         {list.map((s) => (
@@ -384,70 +362,17 @@ function QuickBook({
               <p className="text-[11px] text-ink-3">{s.habit}</p>
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {s.slots.map((slot) => {
-                const active = picked?.roomId === s.roomId && picked.date === slot.date && picked.start === slot.start;
-                return (
-                  <button
-                    key={`${slot.date}${slot.start}`}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => {
-                      setError(null);
-                      setPicked(active ? null : { roomId: s.roomId, date: slot.date, start: slot.start, end: slot.end, roomName: s.roomName });
-                    }}
-                    className={cn(
-                      "h-9 px-3 rounded-pill border text-sm tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100",
-                      active ? "bg-primary-600 border-primary-600 text-white font-semibold" : "border-primary-100 bg-primary-50/60 text-primary-700 hover:border-primary-300",
-                    )}
-                  >
-                    {slot.label}
-                  </button>
-                );
-              })}
+              {s.slots.map((slot) => (
+                <button
+                  key={`${slot.date}${slot.start}`}
+                  type="button"
+                  onClick={() => onPick({ roomId: s.roomId, date: slot.date, start: slot.start })}
+                  className="h-9 px-3 rounded-pill border border-primary-100 bg-primary-50/60 text-sm tabular-nums text-primary-700 hover:border-primary-300 transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100"
+                >
+                  {slot.label}
+                </button>
+              ))}
             </div>
-            {picked?.roomId === s.roomId && (
-              <div className="mt-3 rounded-card-sm bg-surface-subtle p-3">
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    autoFocus
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && book()}
-                    maxLength={120}
-                    placeholder="ชื่อการจอง เช่น ประชุมทีม"
-                    className="h-10 flex-1 px-3.5 rounded-input border border-line bg-white text-sm focus:outline-none focus:border-primary-600 focus:ring-4 focus:ring-primary-50"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={book}
-                      disabled={!title.trim() || pending}
-                      className="h-10 px-4 rounded-pill bg-primary-600 text-white text-sm font-semibold inline-flex items-center gap-1.5 hover:bg-primary-700 disabled:opacity-40"
-                    >
-                      {pending && <Loader2 size={14} className="animate-spin" />}
-                      จองเลย
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onAdjust({ ...picked, title })}
-                      className="h-10 px-3.5 rounded-pill border border-line bg-white text-sm text-ink-2 hover:text-ink-1"
-                    >
-                      ปรับเวลา
-                    </button>
-                  </div>
-                </div>
-                {recentTitles.length > 0 && !title && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {recentTitles.map((t) => (
-                      <button key={t} type="button" onClick={() => setTitle(t)} className="text-xs px-2.5 py-1 rounded-pill bg-white border border-line text-ink-2 hover:text-ink-1">
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-              </div>
-            )}
           </li>
         ))}
       </ul>

@@ -5,6 +5,7 @@ import { Plus, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { addDays, bkkDate, bkkTime, fromBkk, timeToMinutes } from "@/lib/time/bkk";
 import type { PortalData } from "@/lib/server/portal-data";
+import { RoomPhoto } from "./booking-sheet";
 import { dayChip, hhmm } from "./format";
 
 /**
@@ -86,8 +87,8 @@ export function Availability({
       </div>
 
       <div className="overflow-x-auto scrollbar-thin border-t border-line-soft">
-        <div className="min-w-[760px] px-5 pb-5">
-          <div className="relative h-7 ml-[148px]">
+        <div className="min-w-[800px] px-5 pb-5">
+          <div className="relative h-7 ml-[188px]">
             {ticks.map((m) => (
               <span
                 key={m}
@@ -104,7 +105,9 @@ export function Availability({
               const blocks = blocksFor(r.id);
               return (
                 <div key={r.id} className="flex items-stretch gap-3">
-                  <div className="w-[136px] shrink-0 py-1.5">
+                  <div className="w-[176px] shrink-0 py-1.5 flex items-center gap-2.5">
+                    <RoomPhoto room={r} className="!w-10 h-10 rounded-[10px] shrink-0" />
+                    <div className="min-w-0">
                     <p className="flex items-center gap-1.5 text-sm font-semibold tracking-tight text-ink-1">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: r.color }} />
                       <span className="truncate">{r.name}</span>
@@ -113,6 +116,7 @@ export function Availability({
                       <Users size={11} strokeWidth={1.75} />
                       {r.capacityMax ? `${r.capacityMin ?? 1}–${r.capacityMax} คน` : "—"}
                     </p>
+                    </div>
                   </div>
 
                   <div

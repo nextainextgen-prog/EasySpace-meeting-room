@@ -67,7 +67,7 @@ export default async function DevPortal({ searchParams }: { searchParams: Promis
   };
 
   return (
-    <AppShell profile={{ name: data.me.name, email: data.me.email, avatarUrl: null, orgName: data.me.orgName }}>
+    <AppShell profile={{ name: data.me.name, email: data.me.email, avatarUrl: null }}>
       <PortalHome data={data} />
     </AppShell>
   );

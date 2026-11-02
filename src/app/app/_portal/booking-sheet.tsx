@@ -192,11 +192,13 @@ export function BookingSheet({
                   disabled={closed}
                   onClick={() => setRoomId(r.id)}
                   className={cn(
-                    "text-left rounded-card-sm border px-3.5 py-3 transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100",
-                    active ? "border-primary-600 bg-primary-50" : "border-line hover:border-primary-200",
+                    "text-left rounded-card-sm border overflow-hidden transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100",
+                    active ? "border-primary-600 bg-primary-50 ring-2 ring-primary-600" : "border-line hover:border-primary-200",
                     closed && "opacity-40",
                   )}
                 >
+                  <RoomPhoto room={r} className="h-28" />
+                  <span className="block px-3.5 pt-2.5 pb-3">
                   <span className="flex items-center gap-2 text-sm font-semibold tracking-tight text-ink-1">
                     <span className="w-2 h-2 rounded-full" style={{ background: r.color }} />
                     {r.name}
@@ -204,6 +206,7 @@ export function BookingSheet({
                   <span className="mt-1 flex items-center gap-1 text-xs text-ink-2">
                     <Users size={12} strokeWidth={1.75} />
                     {closed ? "ปิดวันนี้" : r.capacityMax ? `${r.capacityMin ?? 1}–${r.capacityMax} คน` : "—"}
+                  </span>
                   </span>
                 </button>
               );
@@ -333,6 +336,25 @@ export function BookingSheet({
         )}
       </div>
     </Modal>
+  );
+}
+
+/** Room thumbnail, or a tinted block with the room's initial when it has none. */
+export function RoomPhoto({ room, className }: { room: PortalRoom; className?: string }) {
+  if (!room.thumbnailUrl) {
+    return (
+      <span
+        className={cn("block w-full grid place-items-center text-2xl font-bold", className)}
+        style={{ background: `${room.color}1f`, color: room.color }}
+        aria-hidden
+      >
+        {room.name.slice(0, 1)}
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={room.thumbnailUrl} alt="" loading="lazy" className={cn("block w-full object-cover bg-surface-subtle", className)} />
   );
 }
 

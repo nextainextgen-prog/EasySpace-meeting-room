@@ -1,110 +1,133 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Building2, ChevronDown, LogOut, Send, Users } from "lucide-react";
+import { usePathname } from "next/navigation";
+import {
+  Calendar,
+  Home,
+  CalendarPlus,
+  Bell,
+  User,
+  LogOut,
+  Building2,
+} from "lucide-react";
+import { cn } from "@/lib/cn";
 
 interface ShellProfile {
   name: string;
   email: string;
   avatarUrl: string | null;
-  orgName?: string | null;
-  isManager?: boolean;
 }
 
-/**
- * The member portal is one page now, so the shell is only a header: brand,
- * company, and a small account menu. No tabs, no bottom bar.
- */
-export function AppShell({ profile, children }: { profile: ShellProfile; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+const tabs = [
+  { href: "/app", label: "หน้าหลัก", icon: Home },
+  { href: "/app/calendar", label: "จองห้อง", icon: CalendarPlus },
+  { href: "/app/my-bookings", label: "การจองของฉัน", icon: Calendar },
+  { href: "/app/notifications", label: "แจ้งเตือน", icon: Bell },
+  { href: "/app/profile", label: "โปรไฟล์", icon: User },
+];
 
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [open]);
-
+export function AppShell({
+  profile,
+  children,
+}: {
+  profile: ShellProfile;
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
   return (
-    <div className="min-h-screen bg-surface-page">
-      <header className="bg-white/90 backdrop-blur border-b border-line sticky top-0 z-30">
-        <div className="mx-auto max-w-[1240px] h-16 px-4 md:px-6 flex items-center gap-3">
+    <div className="min-h-screen bg-surface-page pb-20 md:pb-0">
+      <header className="bg-white border-b border-line sticky top-0 z-30">
+        <div className="h-16 px-4 md:px-6 lg:px-8 flex items-center gap-4">
           <Link href="/app" className="flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-card-sm bg-primary-600 text-white grid place-items-center">
+            <span className="w-9 h-9 rounded-card-sm bg-primary-600 text-white grid place-items-center shadow-card">
               <Building2 size={18} strokeWidth={2} />
             </span>
-            <span className="font-bold tracking-tight text-ink-1 text-[15px]">EasySpace</span>
+            <span className="font-bold tracking-tight text-ink-1 text-[15px]">
+              EasySpace
+            </span>
           </Link>
-          {profile.orgName && (
-            <span className="hidden sm:inline text-sm text-ink-3 truncate">· {profile.orgName}</span>
-          )}
+          <nav data-tour="nav" className="hidden md:flex items-center gap-1 ml-6">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const active =
+                pathname === tab.href ||
+                (tab.href !== "/app" && pathname?.startsWith(tab.href));
+              return (
+                <Link
+                  key={tab.href}
+                  href={tab.href}
+                  className={cn(
+                    "px-3 py-2 rounded-input text-sm tracking-tight transition flex items-center gap-2",
+                    active
+                      ? "bg-primary-50 text-primary-700 font-medium"
+                      : "text-ink-2 hover:bg-surface-subtle hover:text-ink-1",
+                  )}
+                >
+                  <Icon size={15} strokeWidth={1.75} />
+                  {tab.label}
+                </Link>
+              );
+            })}
+          </nav>
           <div className="flex-1" />
-          <div className="relative" ref={menuRef} data-tour="account">
-            <button
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              aria-haspopup="menu"
-              aria-expanded={open}
-              className="flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-pill hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-100"
-            >
-              <span className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 grid place-items-center font-semibold text-xs overflow-hidden">
+          <div className="flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-2.5 px-2.5 py-1.5 rounded-pill bg-surface-subtle">
+              <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-700 grid place-items-center font-semibold text-xs overflow-hidden">
                 {profile.avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={profile.avatarUrl} alt="" className="w-full h-full object-cover" />
+                  <img
+                    src={profile.avatarUrl}
+                    alt={profile.name}
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
                   profile.name.slice(0, 1).toUpperCase()
                 )}
-              </span>
-              <span className="hidden md:block text-sm text-ink-1 tracking-tight max-w-[160px] truncate">{profile.name}</span>
-              <ChevronDown size={14} className="text-ink-3" />
-            </button>
-            {open && (
-              <div role="menu" className="absolute right-0 mt-2 w-64 rounded-card-sm bg-white border border-line shadow-pop p-1.5">
-                <div className="px-3 py-2.5 border-b border-line-soft mb-1">
-                  <p className="text-sm font-semibold text-ink-1 truncate">{profile.name}</p>
-                  <p className="text-xs text-ink-3 truncate">{profile.email}</p>
-                </div>
-                <a
-                  role="menuitem"
-                  href="https://t.me/EasySpaceBookingBot"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-input text-sm text-ink-1 hover:bg-surface-subtle"
-                >
-                  <Send size={15} strokeWidth={1.75} className="text-ink-2" />
-                  จองผ่าน Telegram
-                </a>
-                {profile.isManager && (
-                  <Link role="menuitem" href="/org-admin" className="flex items-center gap-2.5 px-3 py-2 rounded-input text-sm text-ink-1 hover:bg-surface-subtle">
-                    <Users size={15} strokeWidth={1.75} className="text-ink-2" />
-                    จัดการสมาชิกบริษัท
-                  </Link>
-                )}
-                <form action="/api/auth/logout?next=member" method="post">
-                  <button
-                    role="menuitem"
-                    type="submit"
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-input text-sm text-red-700 hover:bg-red-50"
-                  >
-                    <LogOut size={15} strokeWidth={1.75} />
-                    ออกจากระบบ
-                  </button>
-                </form>
               </div>
-            )}
+              <span className="text-xs text-ink-2 tracking-tight max-w-[140px] truncate">
+                {profile.name}
+              </span>
+            </div>
+            <form action="/api/auth/logout?next=member" method="post">
+              <button
+                type="submit"
+                className="w-10 h-10 rounded-pill bg-surface-subtle text-ink-2 hover:bg-line grid place-items-center transition"
+                aria-label="ออกจากระบบ"
+              >
+                <LogOut size={16} strokeWidth={1.75} />
+              </button>
+            </form>
           </div>
         </div>
       </header>
+
       {children}
+
+      {/* Mobile bottom nav */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-line z-40">
+        <div className="grid grid-cols-5">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const active =
+              pathname === tab.href ||
+              (tab.href !== "/app" && pathname?.startsWith(tab.href));
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={cn(
+                  "h-16 flex flex-col items-center justify-center gap-1 transition",
+                  active ? "text-primary-700" : "text-ink-3",
+                )}
+              >
+                <Icon size={20} strokeWidth={active ? 2 : 1.75} />
+                <span className="text-[10px] tracking-tight">{tab.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }
