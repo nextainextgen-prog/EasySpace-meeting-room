@@ -135,3 +135,13 @@ export function bkkDateLabel(input: string | Date): string {
   const d = asBkkClock(input);
   return `${d.getUTCDate()} ${THAI_MONTH_SHORT[d.getUTCMonth()]} ${d.getUTCFullYear() + 543}`;
 }
+
+/**
+ * Whether a room's `service_days` covers an ISO weekday. Sunday is stored as
+ * 0 by convention, but some rooms were saved with 7 — both mean Sunday.
+ */
+export function servesOn(serviceDays: number[] | null | undefined, weekday: Weekday): boolean {
+  if (!serviceDays || serviceDays.length === 0) return true;
+  if (weekday === 7) return serviceDays.includes(0) || serviceDays.includes(7);
+  return serviceDays.includes(weekday);
+}

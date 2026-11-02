@@ -13,12 +13,18 @@
     "test:public": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/public-booking.ts",
     "test:payment": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/payment.ts",
     "test:overrides": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/overrides.ts",
-    "test:quotations": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/quotations.ts"
+    "test:quotations": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/quotations.ts",
+    "test:tgbot": "TGBOT_DRY_RUN=1 tsx --tsconfig tsconfig.e2e-bot.json --env-file=.env.local scripts/e2e/tgbot.ts",
+    "tgbot:setup": "tsx --tsconfig tsconfig.e2e-bot.json --env-file=.env.local scripts/tgbot/setup.ts",
+    "tgbot:worker": "node bot-worker/worker.mjs",
+    "manual:images": "tsx --tsconfig tsconfig.e2e-bot.json --env-file=.env.local scripts/manual/bot-sample-images.ts docs/manual/images && sh scripts/manual/screenshots.sh"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@hookform/resolvers": "^3.9.1",
+    "@ibm/plex-sans-thai": "^1.1.0",
     "@phosphor-icons/react": "^2.1.10",
+    "@resvg/resvg-js": "^2.6.2",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.46.1",
     "@tanstack/react-query": "^5.101.4",

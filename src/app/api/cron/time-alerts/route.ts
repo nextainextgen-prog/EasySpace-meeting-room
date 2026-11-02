@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { dispatchEvent } from "@/lib/server/notifications";
+import { runBotTick } from "@/lib/tgbot/notify";
 import {
   bookingStartingSoonTemplate,
   bookingEndingSoonTemplate,
@@ -180,5 +181,12 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, scanned: bookings.length, events });
+  // Personal reminders from the Telegram booking bot ride the same heartbeat
+  // (GitHub Actions, every 5 minutes) as a backstop to the office Mac worker.
+  const bot = await runBotTick().catch((e) => {
+    console.error("[time-alerts] bot tick failed", e);
+    return { sent: 0, skipped: "error" };
+  });
+
+  return NextResponse.json({ ok: true, scanned: bookings.length, events, bot });
 }

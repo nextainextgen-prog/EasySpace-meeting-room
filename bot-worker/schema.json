@@ -1,0 +1,109 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reply",
+    "action"
+  ],
+  "properties": {
+    "reply": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "none",
+        "help",
+        "book",
+        "show_week",
+        "show_free",
+        "my_bookings",
+        "cancel",
+        "move",
+        "rename",
+        "extend",
+        "usage",
+        "settings",
+        "set_prefs"
+      ]
+    },
+    "date": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "start": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "end": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "duration_min": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "room": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "repeat_weeks": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "remind_before_min": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "end_warn_min": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "start_alert": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "end_alert": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "external_alerts": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  }
+}

@@ -33,7 +33,9 @@ export const RESCHEDULE_SETTING_KEY = "booking.member_reschedule";
 export const DEFAULT_RESCHEDULE_POLICY: ReschedulePolicy = {
   enabled: true,
   allowed_tiers: ["manager", "member"],
-  min_notice_hours: 2,
+  // 0 so the "แก้เวลา" button on the bot's 1-hour reminder can still move the
+  // meeting. Admins who want a notice period can raise it in settings.
+  min_notice_hours: 0,
   max_advance_days: 365,
   max_occurrences_per_request: 60,
   allow_room_change: true,

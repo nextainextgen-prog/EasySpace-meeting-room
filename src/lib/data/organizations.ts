@@ -1,3 +1,4 @@
+import { bkkDate, fromBkk } from "@/lib/time/bkk";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 
 export interface Organization {
@@ -45,9 +46,9 @@ export interface OrgUsage {
 export async function getOrgUsage(orgId: string): Promise<OrgUsage> {
   const admin = createSupabaseAdminClient();
 
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
+  // First of the month in Bangkok — the server runs in UTC, where setHours()
+  // would start the month seven hours late.
+  const monthStart = fromBkk(`${bkkDate(new Date()).slice(0, 8)}01`, "00:00");
 
   const [{ data: members }, { data: bookings }, { data: metaRow }] =
     await Promise.all([
@@ -59,6 +60,8 @@ export async function getOrgUsage(orgId: string): Promise<OrgUsage> {
         .from("bookings")
         .select("starts_at, ends_at")
         .eq("org_id", orgId)
+        // Cancelled and no-show bookings never used the room.
+        .not("booking_status", "in", "(cancelled,no_show)")
         .gte("starts_at", monthStart.toISOString()),
       admin
         .from("settings")

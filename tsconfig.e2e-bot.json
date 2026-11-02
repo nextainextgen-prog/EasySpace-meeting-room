@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/lib/auth": ["./scripts/e2e/stub-auth.ts"],
+      "@/lib/data/members": ["./scripts/e2e/stub-members-als.ts"],
+      "@/lib/server/notifications": ["./scripts/e2e/stub-notifications.ts"],
+      "@/lib/email": ["./scripts/e2e/stub-email.ts"],
+      "@/lib/integrations/google-calendar": ["./scripts/e2e/stub-google-calendar.ts"],
+      "next/cache": ["./scripts/e2e/stub-next-cache.ts"],
+      "@/*": ["./src/*"]
+    }
+  }
+}

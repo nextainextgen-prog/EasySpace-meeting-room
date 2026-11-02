@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { cache } from "react";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { getCurrentUser } from "@/lib/auth";
@@ -38,8 +39,22 @@ export interface MemberContext {
  * Memoized per-request — /app pages + /org-admin layout call this from
  * multiple places per nav; cache() dedupes the lookup.
  */
+const actingMember = new AsyncLocalStorage<MemberContext>();
+
+/**
+ * Run `fn` as a member who has no browser session — the Telegram bot acts for
+ * the member it identified by their linked chat. Inside, `getCurrentMember()`
+ * returns `ctx`, so the session-bound server actions (rescheduling) apply
+ * every rule they apply on the web, unchanged.
+ */
+export function runAsMember<T>(ctx: MemberContext, fn: () => Promise<T>): Promise<T> {
+  return actingMember.run(ctx, fn);
+}
+
 export const getCurrentMember = cache(
   async (): Promise<MemberContext | null> => {
+    const acting = actingMember.getStore();
+    if (acting) return acting;
     const user = await getCurrentUser();
     if (!user || !user.email) return null;
 
