@@ -78,10 +78,46 @@ export const getCurrentProfile = cache(
   },
 );
 
-export async function requireAuth(): Promise<AuthProfile> {
+/**
+ * Whether the signed-in user is a building member (portal user). Google
+ * sign-ups get an auto-provisioned profile with role "viewer", the same role
+ * name the back office uses, so the role alone cannot tell a member from an
+ * admin-side viewer — the `members` row can.
+ */
+export const isMemberUser = cache(async (): Promise<boolean> => {
+  const user = await getCurrentUser();
+  if (!user) return false;
+  const admin = createSupabaseAdminClient();
+  const { data: byProfile } = await admin
+    .from("members")
+    .select("id")
+    .eq("profile_id", user.id)
+    .limit(1)
+    .maybeSingle();
+  if (byProfile) return true;
+  if (!user.email) return false;
+  const { data: byEmail } = await admin
+    .from("members")
+    .select("id")
+    .ilike("email", user.email)
+    .limit(1)
+    .maybeSingle();
+  return !!byEmail;
+});
+
+/** Where a signed-in user belongs: staff go to the back office, members to the portal. */
+export async function homePathFor(profile: AuthProfile): Promise<string> {
+  if (hasRole(profile, "staff")) return "/admin/bookings";
+  if (await isMemberUser()) return "/app";
+  return "/admin/bookings";
+}
+
+export async function requireAuth(
+  opts: { loginPath?: string } = {},
+): Promise<AuthProfile> {
   const profile = await getCurrentProfile();
   if (!profile) {
-    redirect("/login");
+    redirect(opts.loginPath ?? "/login");
   }
   if (!profile.is_active) {
     redirect("/login?error=disabled");
@@ -107,6 +143,9 @@ export function hasRole(profile: AuthProfile, minRole: Role) {
 export async function requireRole(minRole: Role): Promise<AuthProfile> {
   const profile = await requireAuth();
   if (!hasRole(profile, minRole)) {
+    // A member who wandered into the back office goes home, not to the admin
+    // login — that page signs out on ?error=, which cost members a second login.
+    if (await isMemberUser()) redirect("/app");
     redirect("/login?error=forbidden");
   }
   return profile;

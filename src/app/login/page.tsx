@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Calendar } from "lucide-react";
 import { LoginForm } from "./login-form";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentProfile, getCurrentUser, homePathFor } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { createSupabaseServerClient } from "@/lib/integrations/supabase/server";
 
@@ -43,7 +43,10 @@ export default async function LoginPage({
       const supabase = await createSupabaseServerClient();
       await supabase.auth.signOut();
     } else {
-      redirect(params.next ?? "/admin/bookings");
+      const profile = await getCurrentProfile();
+      redirect(
+        params.next ?? (profile ? await homePathFor(profile) : "/admin/bookings"),
+      );
     }
   }
   const errorMessage = params.error ? ERROR_MESSAGES[params.error] : null;

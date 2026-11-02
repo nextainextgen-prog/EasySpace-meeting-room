@@ -65,6 +65,11 @@ export function createSupabaseBrowserClient() {
 export async function startGoogleOAuth(redirectTo: string) {
   const supabase = createSupabaseBrowserClient();
 
+  // Google has no "remember me" box. A "0" left behind by an earlier password
+  // login on this browser would otherwise sign this Google session out at the
+  // next browser launch.
+  setRememberPreference(true);
+
   // Waits on initializePromise and takes the lock, so any in-flight recovery
   // or token refresh has finished before we go near the verifier.
   await supabase.auth.getSession();

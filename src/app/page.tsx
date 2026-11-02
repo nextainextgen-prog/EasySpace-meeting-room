@@ -1,20 +1,10 @@
 import { redirect } from "next/navigation";
-import { getCurrentProfile } from "@/lib/auth";
-
-const ADMIN_TIER_ROLES = new Set([
-  "owner",
-  "super_admin",
-  "admin",
-  "staff",
-  "accountant",
-  "marketing",
-  "viewer",
-]);
+import { getCurrentProfile, homePathFor } from "@/lib/auth";
 
 /**
  * Root entry: bounce to /login or to the right home based on the role.
- * - Any internal staff role (owner..viewer) → /admin/bookings
- * - Regular org members                     → /app
+ * - Staff and above                        → /admin/bookings
+ * - Org members (a `members` row)          → /app
  * - Logged out                              → /login
  *
  * Staff land on the booking form rather than the dashboard: logging a walk-in
@@ -26,5 +16,5 @@ export default async function Home() {
   if (!profile) {
     redirect("/login");
   }
-  redirect(ADMIN_TIER_ROLES.has(profile.role) ? "/admin/bookings" : "/app");
+  redirect(await homePathFor(profile));
 }

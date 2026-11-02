@@ -6,10 +6,12 @@ import {
   isRemembered,
 } from "@/lib/integrations/supabase/client";
 
-/** Present for the life of one browser session; sessionStorage is wiped when
- *  the browser (not the tab) is closed, which is exactly the boundary
- *  "จำการเข้าสู่ระบบ" is about. */
-const BROWSER_SESSION_FLAG = "easyspace.browser-session";
+/** Present for the life of one browser session: a cookie with no max-age is
+ *  dropped when the browser closes and is shared by every tab, which is
+ *  exactly the boundary "จำการเข้าสู่ระบบ" is about. (sessionStorage was used
+ *  before, but it is per tab, so every new tab looked like a fresh browser
+ *  launch and signed the user out.) */
+const BROWSER_SESSION_COOKIE = "easyspace.browser_session";
 
 /**
  * Keeps the Supabase session alive — and honours the user's choice not to.
@@ -31,14 +33,10 @@ export function SessionKeeper() {
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
 
-    let freshBrowserSession = false;
-    try {
-      freshBrowserSession = !sessionStorage.getItem(BROWSER_SESSION_FLAG);
-      sessionStorage.setItem(BROWSER_SESSION_FLAG, "1");
-    } catch {
-      // Storage blocked — treat it as a continuing session rather than
-      // signing someone out on every single page load.
-    }
+    const freshBrowserSession = !document.cookie
+      .split(";")
+      .some((c) => c.trim().startsWith(`${BROWSER_SESSION_COOKIE}=`));
+    document.cookie = `${BROWSER_SESSION_COOKIE}=1; path=/; SameSite=Lax`;
 
     if (freshBrowserSession && !isRemembered()) {
       void supabase.auth.signOut().then(() => {
