@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/app/app/_portal/availability.tsx"
+        ],
+        "createdAt": "2026-10-31T19:05:14.801Z",
+        "reason": "Claude triage: L170 is the 2px 'now' time marker positioned inside the timeline track, not a card side border"
+      }
+    ]
+  }
+}
