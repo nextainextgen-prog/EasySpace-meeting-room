@@ -26,6 +26,9 @@ const SAMPLE: Array<[RegExp, string]> = [
   [/บริษัทใช้ไป [\d.]+ ชม\.( \d+ นาที)?/g, "บริษัทใช้ไป 42 ชม."],
   [/เดือนนี้ใช้ไป [\d.]+ ชม\.( \d+ นาที)?/g, "เดือนนี้ใช้ไป 42 ชม."],
   [/คุณใช้ไป [\d.]+ ชม\.( \d+ นาที)?/g, "คุณใช้ไป 6 ชม. 30 นาที"],
+  [/คุณจองไป <b>\d+ ครั้ง<\/b> รวม <b>[^<]+<\/b>/g, "คุณจองไป <b>5 ครั้ง</b> รวม <b>6 ชม. 30 นาที</b>"],
+  [/ใช้ไป [\d.]+ ชม\.( \d+ นาที)?/g, "ใช้ไป 42 ชม."],
+  [/\nถัดไป: [^\n]+/g, "\nถัดไป: MASTER ROOM พรุ่งนี้ 10:00"],
 ];
 
 const THAI_MONTH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
@@ -64,7 +67,8 @@ export default async function DevChat({ searchParams }: { searchParams: Promise<
     <div className="min-h-screen bg-[#dfe7ec] py-6 flex justify-center">
       <div className="w-[430px] rounded-[28px] overflow-hidden bg-[#c9d9c5] shadow-pop" data-tour="phone">
         <div className="bg-[#517da2] text-white px-4 py-3 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-white/25 grid place-items-center font-bold">น</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/easyspace-bot.png" alt="" className="w-10 h-10 rounded-full" />
           <div>
             <p className="font-semibold leading-5">EasySpace ห้องประชุม</p>
             <p className="text-xs text-white/75">bot · @EasySpaceBookingBot</p>
