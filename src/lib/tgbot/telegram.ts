@@ -138,6 +138,23 @@ export async function sendPhoto(
   return call<{ message_id: number }>("sendPhoto", payload, photo);
 }
 
+/** `video` is a public URL (Telegram fetches it, 20 MB max) or a file_id from an earlier send. */
+export async function sendVideo(
+  chatId: string,
+  video: string,
+  caption: string,
+  meta: { width: number; height: number; duration: number },
+) {
+  return call<{ message_id: number; video?: { file_id: string } }>("sendVideo", {
+    chat_id: chatId,
+    video,
+    caption,
+    parse_mode: "HTML",
+    supports_streaming: true,
+    ...meta,
+  });
+}
+
 export async function editText(chatId: string, messageId: number, text: string, buttons?: Keyboard) {
   return call("editMessageText", {
     chat_id: chatId,

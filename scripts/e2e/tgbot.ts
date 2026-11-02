@@ -158,6 +158,8 @@ async function main() {
   section = "link";
   let from = await say("/start");
   ok("start asks for e-mail", texts(from).some((t) => t.includes("อีเมล")));
+  const clip = log.slice(from).findIndex((o) => o.method === "sendVideo");
+  ok("start sends the how-to clip first", clip === 0 && String(log[from].payload.video).endsWith("/tgbot/how-to-book.mp4"));
   from = await say("nobody@nowhere.example");
   ok("unknown e-mail is refused", texts(from).some((t) => t.includes("หาอีเมล")));
   from = await say(MEMBER_EMAIL.toUpperCase());

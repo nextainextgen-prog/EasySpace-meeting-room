@@ -29,9 +29,11 @@ import {
   editText,
   sendPhoto,
   sendText,
+  sendVideo,
   typing,
   type Keyboard,
 } from "./telegram";
+import { publicBaseUrl } from "@/lib/data/public-rooms";
 import {
   DEFAULT_PREFS,
   getTelegramLink,
@@ -222,12 +224,32 @@ function firstName(full: string) {
 
 // ─── Linking ───────────────────────────────────────────────────────────────
 
+/**
+ * The 90-second how-to clip (design/clips/telegram-booking), sent when a new
+ * user presses Start. Telegram fetches it from public/ once; the file_id it
+ * returns is kept and reused, so the clip is never downloaded twice. Rename
+ * the file when the clip changes and the old file_id is dropped on its own.
+ */
+const TUTORIAL_FILE = "/tgbot/how-to-book.mp4";
+const TUTORIAL_META = { width: 1080, height: 1920, duration: 91 };
+
+async function sendTutorial(chatId: string) {
+  const url = publicBaseUrl() + TUTORIAL_FILE;
+  const cached = await kvGet<{ url: string; fileId: string }>("tgbot:tutorial");
+  const caption = "ดูวิธีจองห้องกับหนูใน 90 วินาทีค่ะ";
+  if (cached?.url === url && (await sendVideo(chatId, cached.fileId, caption, TUTORIAL_META)).ok) return;
+  const res = await sendVideo(chatId, url, caption, TUTORIAL_META);
+  const fileId = res.result?.video?.file_id;
+  if (res.ok && fileId) await kvSet("tgbot:tutorial", { url, fileId });
+}
+
 const EMAIL_RE = /[^\s@<>()]+@[^\s@<>()]+\.[^\s@<>()]+/;
 
 async function handleUnlinked(from: TgUser, chatId: string, text: string) {
   const tgUserId = String(from.id);
   const email = text.match(EMAIL_RE)?.[0];
   if (!email) {
+    if (text.toLowerCase().startsWith("/start")) await sendTutorial(chatId);
     return sendText(
       chatId,
       [
