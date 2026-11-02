@@ -925,22 +925,30 @@ function Footer({
   const b = detail.booking as unknown as Record<string, unknown>;
   const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [submitting, startTransition] = useTransition();
 
   function doCancel() {
+    setError(null);
     startTransition(async () => {
-      const r = await cancelBooking({
-        bookingId: b.id as string,
-        reason: reason || "ยกเลิกจาก modal",
-      });
-      if (r.ok) onCancelled();
+      try {
+        const r = await cancelBooking({
+          bookingId: b.id as string,
+          reason: reason || "ยกเลิกจาก modal",
+        });
+        if (r.ok) onCancelled();
+        else setError(`ยกเลิกไม่สำเร็จ (${r.error})`);
+      } catch {
+        setError("ยกเลิกไม่สำเร็จ ลองรีเฟรชหน้าแล้วตรวจสถานะอีกครั้ง");
+      }
     });
   }
 
   const cancelled = b.booking_status === "cancelled";
 
   return (
-    <div className="px-5 py-3 bg-surface-subtle border-t border-line-soft flex items-center gap-2 print:hidden">
+    <div className="px-5 py-3 bg-surface-subtle border-t border-line-soft flex flex-wrap items-center gap-2 print:hidden">
+      {error && <p className="w-full text-xs text-red-600">{error}</p>}
       {confirming ? (
         <>
           <Input

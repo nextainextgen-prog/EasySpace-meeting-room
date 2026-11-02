@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 import { dispatchEvent } from "@/lib/server/notifications";
 import { restoreDisplacedFor } from "@/lib/server/public-booking";
 import { sendBookingLine } from "@/lib/server/booking-line";
+import { bookerNames } from "@/lib/server/booker-name";
 import { notifyOverrideFinal } from "@/lib/server/overrides";
 import { getCurrentProfile, requireRole } from "@/lib/auth";
 import { listBookingsForRange } from "@/lib/data/bookings";
@@ -60,6 +61,7 @@ const MoveSchema = z.object({
 });
 
 export async function moveBooking(raw: z.infer<typeof MoveSchema>) {
+  await requireRole("staff");
   const parsed = MoveSchema.safeParse(raw);
   if (!parsed.success) return { ok: false as const, error: "validation" };
   const input = parsed.data;
@@ -300,7 +302,7 @@ export async function addBookingPayment(raw: z.infer<typeof AddPaymentSchema>) {
   const { data: booking } = await supabase
     .from("bookings")
     .select(
-      "id, total_amount, paid_amount, reference_code, room:rooms(name), customer:customers(display_name)",
+      "id, total_amount, paid_amount, reference_code, member_id, room:rooms(name), customer:customers(display_name)",
     )
     .eq("id", input.bookingId)
     .maybeSingle();
@@ -309,9 +311,11 @@ export async function addBookingPayment(raw: z.infer<typeof AddPaymentSchema>) {
     total_amount: number;
     paid_amount: number;
     reference_code: string;
-    room: { name: string };
-    customer: { display_name: string };
+    member_id: string | null;
+    room: { name: string } | null;
+    customer: { display_name: string } | null;
   };
+  const [bookerName] = await bookerNames([row]);
 
   const newPaid = Number(row.paid_amount) + input.amount;
   const newStatus: PaymentStatus =
@@ -349,8 +353,8 @@ export async function addBookingPayment(raw: z.infer<typeof AddPaymentSchema>) {
     newStatus === "paid" ? "payment.paid" : "payment.deposit",
     paymentRecordedTemplate({
       reference: row.reference_code,
-      customerName: row.customer.display_name,
-      roomName: row.room.name,
+      customerName: bookerName,
+      roomName: row.room?.name ?? "-",
       amount: input.amount,
       method: input.method as PaymentMethod,
       totalAmount: Number(row.total_amount),
@@ -591,7 +595,7 @@ export async function bulkCancelBookings(
   const { data: rows } = await supabase
     .from("bookings")
     .select(
-      "id, reference_code, starts_at, ends_at, room:rooms(name), customer:customers(display_name)",
+      "id, reference_code, starts_at, ends_at, member_id, room:rooms(name), customer:customers(display_name)",
     )
     .in("id", parsed.data.ids);
 
@@ -613,19 +617,22 @@ export async function bulkCancelBookings(
     ),
   ]);
 
-  for (const r of (rows ?? []) as unknown as Array<{
+  const cancelled = (rows ?? []) as unknown as Array<{
     reference_code: string;
     starts_at: string;
     ends_at: string;
-    room: { name: string };
-    customer: { display_name: string };
-  }>) {
+    member_id: string | null;
+    room: { name: string } | null;
+    customer: { display_name: string } | null;
+  }>;
+  const cancelledNames = await bookerNames(cancelled);
+  for (const [i, r] of cancelled.entries()) {
     void dispatchEvent(
       "booking.cancelled",
       bookingCancelledTemplate({
         reference: r.reference_code,
-        customerName: r.customer.display_name,
-        roomName: r.room.name,
+        customerName: cancelledNames[i],
+        roomName: r.room?.name ?? "-",
         startsAt: r.starts_at,
         endsAt: r.ends_at,
         reason: raw.reason,
@@ -649,21 +656,24 @@ export async function bulkNotifyTelegram(
   const { data } = await supabase
     .from("bookings")
     .select(
-      "id, reference_code, room:rooms(name), customer:customers(display_name), starts_at, ends_at",
+      "id, reference_code, member_id, room:rooms(name), customer:customers(display_name), starts_at, ends_at",
     )
     .in("id", parsed.data.ids);
 
   const head = raw.message?.trim() || "ประกาศจากแอดมิน";
   const lines: string[] = [`<b>${head}</b>`, ""];
-  for (const b of (data ?? []) as unknown as Array<{
+  const picked = (data ?? []) as unknown as Array<{
     reference_code: string;
-    room: { name: string };
-    customer: { display_name: string };
+    member_id: string | null;
+    room: { name: string } | null;
+    customer: { display_name: string } | null;
     starts_at: string;
     ends_at: string;
-  }>) {
+  }>;
+  const pickedNames = await bookerNames(picked);
+  for (const [i, b] of picked.entries()) {
     lines.push(
-      `• <code>${b.reference_code}</code> · ${b.customer.display_name} · ${b.room.name}`,
+      `• <code>${b.reference_code}</code> · ${pickedNames[i]} · ${b.room?.name ?? "-"}`,
     );
   }
 
@@ -689,15 +699,15 @@ export async function bulkSendInvoices(raw: z.infer<typeof BulkIdsSchema>) {
     reference_code: string;
     total_amount: number;
     paid_amount: number;
-    room: { name: string };
-    customer: { display_name: string; email: string | null };
+    room: { name: string } | null;
+    customer: { display_name: string; email: string | null } | null;
   }>) {
     const remaining = Math.max(
       0,
       Number(b.total_amount) - Number(b.paid_amount),
     );
     lines.push(
-      `• <code>${b.reference_code}</code> · ${b.customer.display_name} · ค้าง ${remaining.toLocaleString()} บาท · ${b.customer.email ?? "no-email"}`,
+      `• <code>${b.reference_code}</code> · ${b.customer?.display_name ?? "สมาชิก"} · ค้าง ${remaining.toLocaleString()} บาท · ${b.customer?.email ?? "no-email"}`,
     );
   }
   void dispatchEvent("outstanding.alert", lines.join("\n"));

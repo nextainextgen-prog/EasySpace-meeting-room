@@ -11,6 +11,7 @@ import {
 import { dispatchEvent } from "@/lib/server/notifications";
 import { restoreDisplacedFor } from "@/lib/server/public-booking";
 import { sendBookingLine } from "@/lib/server/booking-line";
+import { bookerNames } from "@/lib/server/booker-name";
 import { recordAudit } from "./audit";
 import {
   bookingCreatedTemplate,
@@ -882,15 +883,17 @@ export async function cancelBooking(input: {
     reference_code: string;
     starts_at: string;
     ends_at: string;
-    room: { name: string };
-    customer: { display_name: string };
+    member_id: string | null;
+    room: { name: string } | null;
+    customer: { display_name: string } | null;
   };
+  const [bookerName] = await bookerNames([row]);
   void dispatchEvent(
     "booking.cancelled",
     bookingCancelledTemplate({
       reference: row.reference_code,
-      customerName: row.customer.display_name,
-      roomName: row.room.name,
+      customerName: bookerName,
+      roomName: row.room?.name ?? "-",
       startsAt: row.starts_at,
       endsAt: row.ends_at,
       reason: input.reason,
@@ -922,7 +925,7 @@ export async function recordPayment(input: {
   const { data: booking, error: fetchErr } = await supabase
     .from("bookings")
     .select(
-      `total_amount, paid_amount, reference_code,
+      `total_amount, paid_amount, reference_code, member_id,
        room:rooms(name), customer:customers(display_name)`,
     )
     .eq("id", input.bookingId)
@@ -934,9 +937,11 @@ export async function recordPayment(input: {
     total_amount: number;
     paid_amount: number;
     reference_code: string;
-    room: { name: string };
-    customer: { display_name: string };
+    member_id: string | null;
+    room: { name: string } | null;
+    customer: { display_name: string } | null;
   };
+  const [bookerName] = await bookerNames([row]);
 
   const newPaid = Number(row.paid_amount) + input.amount;
   const newStatus: PaymentStatus =
@@ -968,8 +973,8 @@ export async function recordPayment(input: {
     newStatus === "paid" ? "payment.paid" : "payment.deposit",
     paymentRecordedTemplate({
       reference: row.reference_code,
-      customerName: row.customer.display_name,
-      roomName: row.room.name,
+      customerName: bookerName,
+      roomName: row.room?.name ?? "-",
       amount: input.amount,
       method: input.method,
       totalAmount: Number(row.total_amount),
