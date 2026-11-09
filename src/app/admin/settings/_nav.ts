@@ -24,6 +24,7 @@ import {
   Archive,
   Activity,
   QrCode,
+  KeyRound,
   type LucideIcon,
 } from "lucide-react";
 
@@ -223,6 +224,12 @@ export const SETTINGS_GROUPS: Group[] = [
   {
     label: "Integration",
     items: [
+      {
+        href: "/admin/settings/booking-feed",
+        icon: KeyRound,
+        title: "รหัสอ่านข้อมูลการจอง",
+        desc: "ให้บอทหรือปฏิทินภายนอกดึงรายการจอง อ่านอย่างเดียว",
+      },
       {
         href: "/admin/settings/calendar-sync",
         icon: Calendar,

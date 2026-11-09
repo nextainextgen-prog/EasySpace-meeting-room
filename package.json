@@ -17,7 +17,10 @@
     "test:tgbot": "TGBOT_DRY_RUN=1 tsx --tsconfig tsconfig.e2e-bot.json --env-file=.env.local scripts/e2e/tgbot.ts",
     "tgbot:setup": "tsx --tsconfig tsconfig.e2e-bot.json --env-file=.env.local scripts/tgbot/setup.ts",
     "tgbot:worker": "node bot-worker/worker.mjs",
-    "manual:images": "tsx --tsconfig tsconfig.e2e-bot.json --env-file=.env.local scripts/manual/bot-sample-images.ts docs/manual/images && sh scripts/manual/screenshots.sh"
+    "manual:images": "tsx --tsconfig tsconfig.e2e-bot.json --env-file=.env.local scripts/manual/bot-sample-images.ts docs/manual/images && sh scripts/manual/screenshots.sh",
+    "test:overage": "tsx scripts/test-overage.ts",
+    "test:billing": "tsx --tsconfig tsconfig.e2e-billing.json --env-file=.env.local scripts/e2e/org-billing.ts",
+    "test:feed": "tsx --tsconfig tsconfig.e2e.json --env-file=.env.local scripts/e2e/booking-feed.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
