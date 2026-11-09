@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/modal";
 import { cn } from "@/lib/cn";
 import { addDays, bkkDate, bkkTime, bkkWeekday, fromBkk, servesOn, timeToMinutes } from "@/lib/time/bkk";
 import { portalBook, portalMove } from "@/lib/actions/portal";
+import { previewCharge } from "@/lib/billing/overage";
 import type { OwnBooking, PortalRoom } from "@/lib/server/member-ops";
 import type { PortalData } from "@/lib/server/portal-data";
 import { dayChip, hhmm } from "./format";
@@ -110,6 +111,11 @@ export function BookingSheet({
   const total = hours * weeks;
   const remaining = data.usage.remainingHours;
   const overQuota = remaining !== null && total > remaining;
+  // Price only for a new booking this month — another month has its own quota.
+  const charge =
+    overQuota && !moving && room && date.slice(0, 7) === data.today.slice(0, 7)
+      ? previewCharge(remaining, total, room.hourlyRate)
+      : null;
   const ready = !!(room && start && end && (moving || title.trim()));
 
   function submit() {
@@ -157,7 +163,11 @@ export function BookingSheet({
               (remaining === null
                 ? `ใช้ห้อง ${hoursText(total)}`
                 : overQuota
-                  ? `เกินโควตาบริษัท ${hoursText(total - remaining)}`
+                  ? `เกินโควตาบริษัท ${hoursText(total - remaining)}${
+                      charge?.amount
+                        ? ` · ค่าห้อง ${charge.amount.toLocaleString("th-TH", { maximumFractionDigits: 2 })} บาท เรียกเก็บกับบริษัทตอนสิ้นเดือน`
+                        : ""
+                    }`
                   : `หลังจองโควตาบริษัทเหลือ ${hoursText(remaining - total)}`)}
           </p>
           <button

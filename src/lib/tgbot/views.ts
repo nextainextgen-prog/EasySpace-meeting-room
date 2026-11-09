@@ -5,6 +5,7 @@
  */
 
 import { addDays, bkkDate, bkkParts, bkkTime, fromBkk, servesOn, timeToMinutes } from "@/lib/time/bkk";
+import { previewCharge } from "@/lib/billing/overage";
 import {
   checkWindow,
   dayWord,
@@ -391,6 +392,14 @@ export async function askTitle(link: TelegramLink, ctx: MemberCtx, draft: Draft)
   return titles;
 }
 
+/** Hours past the company's quota are billed to the company at the room's rate. */
+function overQuotaLine(remaining: number, hours: number, rate: number, priced: boolean) {
+  const c = previewCharge(remaining, hours, rate);
+  const head = `โควตาบริษัทเหลือ ${formatHours(remaining)} การจองนี้เกินโควตา ${formatHours(c.chargedHours)}`;
+  if (!priced || !c.amount) return `${head} นะคะ`;
+  return `${head}\nค่าห้องส่วนที่เกิน <b>${c.amount.toLocaleString("th-TH", { maximumFractionDigits: 2 })} บาท</b> จะเรียกเก็บกับบริษัทตอนสิ้นเดือนค่ะ`;
+}
+
 export async function sendConfirm(link: TelegramLink, ctx: MemberCtx, draft: Draft, editId?: number) {
   const rooms = await listMemberRooms();
   const room = rooms.find((r) => r.id === draft.roomId);
@@ -415,7 +424,7 @@ export async function sendConfirm(link: TelegramLink, ctx: MemberCtx, draft: Dra
     ? `โควตาบริษัท ไม่จำกัด (เดือนนี้ใช้ไป ${formatHours(usage.orgHours)})`
     : usage.remainingHours! >= total
       ? `โควตาบริษัทเหลือ ${formatHours(usage.remainingHours!)} หลังจองเหลือ ${formatHours(usage.remainingHours! - check.hours)}`
-      : `โควตาบริษัทเหลือ ${formatHours(usage.remainingHours!)} การจองนี้จะเกินโควตานะคะ`;
+      : overQuotaLine(usage.remainingHours!, total, room.hourlyRate, draft.mode !== "move" && draft.date.slice(0, 7) === bkkDate(new Date()).slice(0, 7));
 
   const lines = [
     draft.mode === "move" ? "ย้ายการจองไปที่นี่ใช่ไหมคะ" : "สรุปก่อนจองนะคะ",

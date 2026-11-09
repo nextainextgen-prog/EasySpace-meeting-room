@@ -1,0 +1,34 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/lib/auth": [
+        "./scripts/e2e/stub-auth-accountant.ts"
+      ],
+      "@/lib/data/members": [
+        "./scripts/e2e/stub-members.ts"
+      ],
+      "@/lib/server/notifications": [
+        "./scripts/e2e/stub-notifications.ts"
+      ],
+      "next/cache": [
+        "./scripts/e2e/stub-next-cache.ts"
+      ],
+      "@/lib/integrations/easyslip": [
+        "./scripts/e2e/stub-easyslip.ts"
+      ],
+      "@/lib/integrations/line-messaging": [
+        "./scripts/e2e/stub-line.ts"
+      ],
+      "@/lib/server/payment-banks": [
+        "./scripts/e2e/stub-payment-banks.ts"
+      ],
+      "@/*": [
+        "./src/*"
+      ],
+      "@/lib/email": [
+        "./scripts/e2e/stub-email.ts"
+      ]
+    }
+  }
+}

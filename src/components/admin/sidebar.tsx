@@ -45,6 +45,24 @@ const sections: NavSection[] = [
     ],
   },
   {
+    label: "องค์กร",
+    items: [
+      {
+        href: "/admin/orgs",
+        label: "องค์กรในตึก",
+        icon: "buildings",
+        minRole: "admin",
+      },
+      {
+        href: "/admin/orgs/billing",
+        label: "ค่าใช้เกินโควตา",
+        icon: "overage",
+        indent: true,
+        minRole: "accountant",
+      },
+    ],
+  },
+  {
     label: "การเงิน",
     items: [
       {
@@ -175,10 +193,14 @@ export function AdminSidebar({
                       ? pathname === "/admin/customers" ||
                         (pathname?.startsWith("/admin/customers/") &&
                           !pathname?.startsWith("/admin/customers/analytics"))
-                      : item.href === "/admin/finance"
-                        ? pathname === "/admin/finance"
-                        : pathname === item.href ||
-                        pathname?.startsWith(`${item.href}/`);
+                      : item.href === "/admin/orgs"
+                        ? pathname === "/admin/orgs" ||
+                          (pathname?.startsWith("/admin/orgs/") &&
+                            !pathname?.startsWith("/admin/orgs/billing"))
+                        : item.href === "/admin/finance"
+                          ? pathname === "/admin/finance"
+                          : pathname === item.href ||
+                            pathname?.startsWith(`${item.href}/`);
 
                   return (
                     <Link

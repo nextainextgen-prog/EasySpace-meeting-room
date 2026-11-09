@@ -1,4 +1,4 @@
-import { bkkDate, fromBkk } from "@/lib/time/bkk";
+import { currentPeriod, periodRange } from "@/lib/billing/overage";
 import { createSupabaseAdminClient } from "@/lib/integrations/supabase/admin";
 
 export interface Organization {
@@ -48,7 +48,7 @@ export async function getOrgUsage(orgId: string): Promise<OrgUsage> {
 
   // First of the month in Bangkok — the server runs in UTC, where setHours()
   // would start the month seven hours late.
-  const monthStart = fromBkk(`${bkkDate(new Date()).slice(0, 8)}01`, "00:00");
+  const { start: monthStart, end: monthEnd } = periodRange(currentPeriod());
 
   const [{ data: members }, { data: bookings }, { data: metaRow }] =
     await Promise.all([
@@ -60,9 +60,11 @@ export async function getOrgUsage(orgId: string): Promise<OrgUsage> {
         .from("bookings")
         .select("starts_at, ends_at")
         .eq("org_id", orgId)
-        // Cancelled and no-show bookings never used the room.
-        .not("booking_status", "in", "(cancelled,no_show)")
-        .gte("starts_at", monthStart.toISOString()),
+        // Only cancelled bookings give the hours back; a no-show still held
+        // the room and counts (and is billed past the quota).
+        .neq("booking_status", "cancelled")
+        .gte("starts_at", monthStart)
+        .lt("starts_at", monthEnd),
       admin
         .from("settings")
         .select("value")

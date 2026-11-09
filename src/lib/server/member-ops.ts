@@ -20,6 +20,7 @@ import {
 } from "@/lib/actions/member-reschedule";
 import { runAsMember, type Member, type MemberContext } from "@/lib/data/members";
 import { getOrgUsage } from "@/lib/data/organizations";
+import { shiftPeriod } from "@/lib/billing/overage";
 import {
   addDays,
   bkkDate,
@@ -171,13 +172,15 @@ export interface PortalRoom {
   amenities: string[];
   serviceDays: number[];
   bufferMinutes: number;
+  /** Baht per hour — what hours past the company's quota cost. */
+  hourlyRate: number;
 }
 
 export async function listMemberRooms(): Promise<PortalRoom[]> {
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("rooms")
-    .select("id, name, color, capacity_min, capacity_max, thumbnail_url, amenities, service_days, buffer_minutes, status, allow_internal")
+    .select("id, name, color, capacity_min, capacity_max, thumbnail_url, amenities, service_days, buffer_minutes, status, allow_internal, hourly_rate")
     .eq("status", "active")
     .order("display_order");
   return ((data ?? []) as Array<{
@@ -191,6 +194,7 @@ export async function listMemberRooms(): Promise<PortalRoom[]> {
     service_days: number[] | null;
     buffer_minutes: number | null;
     allow_internal: boolean;
+    hourly_rate: number | null;
   }>)
     .filter((r) => r.allow_internal !== false)
     .map((r) => ({
@@ -203,6 +207,7 @@ export async function listMemberRooms(): Promise<PortalRoom[]> {
       amenities: r.amenities ?? [],
       serviceDays: r.service_days ?? [0, 1, 2, 3, 4, 5, 6],
       bufferMinutes: r.buffer_minutes ?? 0,
+      hourlyRate: Number(r.hourly_rate ?? 0),
     }));
 }
 
@@ -304,8 +309,9 @@ export async function usageFor(ctx: MemberCtx): Promise<MemberUsage> {
       .from("bookings")
       .select("starts_at, ends_at")
       .eq("member_id", ctx.memberId)
-      .not("booking_status", "in", "(cancelled,no_show)")
-      .gte("starts_at", monthStart.toISOString()),
+      .neq("booking_status", "cancelled")
+      .gte("starts_at", monthStart.toISOString())
+      .lt("starts_at", fromBkk(`${shiftPeriod(today.slice(0, 7), 1)}-01`, "00:00").toISOString()),
     getOrgUsage(ctx.orgId),
   ]);
   const rows = (data ?? []) as Array<{ starts_at: string; ends_at: string }>;

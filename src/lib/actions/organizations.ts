@@ -104,8 +104,8 @@ export async function upsertOrganization(
     changes: payload,
   });
 
-  revalidatePath("/admin/users");
-  revalidatePath(`/admin/users/orgs/${input.id}`);
+  revalidatePath("/admin/orgs");
+  revalidatePath(`/admin/orgs/${input.id}`);
   return { ok: true as const, id: input.id };
 }
 
@@ -140,7 +140,7 @@ export async function deleteOrganization(id: string) {
     targetId: id,
   });
 
-  revalidatePath("/admin/users");
+  revalidatePath("/admin/orgs");
   return { ok: true as const };
 }
 
@@ -163,7 +163,7 @@ export async function setOrgStatus(
     changes: { status },
     reason,
   });
-  revalidatePath("/admin/users");
+  revalidatePath("/admin/orgs");
   return { ok: true as const };
 }
 
@@ -206,7 +206,8 @@ export async function setOrgQuota(raw: z.infer<typeof QuotaSchema>) {
     targetId: input.orgId,
     changes: input,
   });
-  revalidatePath(`/admin/users/orgs/${input.orgId}`);
+  revalidatePath("/admin/orgs");
+  revalidatePath(`/admin/orgs/${input.orgId}`);
   return { ok: true as const };
 }
 
@@ -304,7 +305,8 @@ export async function bulkImportMembers(
     changes: { rows: rows.length, created, attached },
   });
 
-  revalidatePath(`/admin/users/orgs/${parsed.data.orgId}`);
+  revalidatePath("/admin/orgs");
+  revalidatePath(`/admin/orgs/${parsed.data.orgId}`);
   return { ok: true as const, total: rows.length, created, attached };
 }
 
